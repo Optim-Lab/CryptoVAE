@@ -17,4 +17,3 @@ wandb*
 .vscode
 privacy
 *.npy
-data
