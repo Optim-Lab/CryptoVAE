@@ -20,23 +20,33 @@ def train_function(context, target, model, iterations, config, optimizer, device
         optimizer.zero_grad()
         
         prior, posterior, params = model(context_batch, target_batch)
-        target_batch_ = target_batch.reshape(-1, 1)
         
-        gamma = torch.cat([torch.cat(params[i][0], dim=0) for i in range(len(params))], dim=0)
-        beta = torch.cat([torch.cat(params[i][1], dim=0) for i in range(len(params))], dim=0)
-        delta = torch.cat([torch.cat(params[i][2], dim=0) for i in range(len(params))], dim=0)
-        
-        """alpha_tilde"""
-        alpha_tilde_list = model.quantile_inverse(target_batch_, gamma, beta, delta)
-        
-        """CRPS loss"""
-        term = (1 - delta.pow(3)) / 3 - delta - torch.maximum(alpha_tilde_list, delta).pow(2)
-        term += 2 * torch.maximum(alpha_tilde_list, delta) * delta
-        quantile = (2 * alpha_tilde_list - 1) * target_batch_
-        quantile += (1 - 2 * alpha_tilde_list) * gamma
-        quantile += (beta * term).sum(dim=1, keepdims=True)
-        quantile = quantile.sum() / context_batch.size(0)
-        logs["quantile"] = logs.get("quantile") + quantile
+        j = 0 # coin
+        quantile_sum = 0
+        for j in range(target_batch.size(-1)):
+            target_batch_ = target_batch[..., j].reshape(-1, 1)
+            
+            gamma = torch.cat([params[i][0][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+            beta = torch.cat([params[i][1][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+            delta = torch.cat([params[i][2][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+            
+            gamma = gamma.reshape(-1, gamma.size(-1))
+            beta = beta.reshape(-1, beta.size(-1))
+            delta = delta.reshape(-1, delta.size(-1))
+            
+            """alpha_tilde"""
+            alpha_tilde_list = model.quantile_inverse(target_batch_, gamma, beta, delta)
+            
+            """CRPS loss"""
+            term = (1 - delta.pow(3)) / 3 - delta - torch.maximum(alpha_tilde_list, delta).pow(2)
+            term += 2 * torch.maximum(alpha_tilde_list, delta) * delta
+            quantile = (2 * alpha_tilde_list - 1) * target_batch_
+            quantile += (1 - 2 * alpha_tilde_list) * gamma
+            quantile += (beta * term).sum(dim=1, keepdims=True)
+            quantile = quantile.sum() / context_batch.size(0)
+            quantile_sum += quantile
+            
+        logs["quantile"] = logs.get("quantile") + quantile_sum
         
         """KL-divergence"""
         prior_mean = prior.mean.reshape(-1, config["d_latent"])
@@ -52,14 +62,18 @@ def train_function(context, target, model, iterations, config, optimizer, device
         KL = KL.sum() / context_batch.size(0)
         logs["KL"] = logs.get("KL") + KL
         
-        loss = quantile + config["beta"] * KL
+        loss = quantile_sum + config["beta"] * KL
         logs["loss"] = logs.get("loss") + loss
         
-        active = (posterior.logvar.exp().mean(dim=0) < 0.1).sum()
+        active = (posterior.logvar.exp().mean(dim=0) < 0.1).to(torch.float32).mean()
         logs["active"] = logs.get("active") + active
         
         loss.backward()
         optimizer.step()
         
     return logs
+#%%
+# gamma = torch.cat([torch.cat(params[i][0], dim=0) for i in range(len(params))], dim=0)
+# beta = torch.cat([torch.cat(params[i][1], dim=0) for i in range(len(params))], dim=0)
+# delta = torch.cat([torch.cat(params[i][2], dim=0) for i in range(len(params))], dim=0)
 #%%

@@ -22,28 +22,28 @@ def positional_encoding(timesteps, d_model):
     return pos_encoding
 #%%
 class AddPosition(nn.Module):
-    def __init__(self, d_model, timesteps):
+    def __init__(self, d_model, timesteps, device):
         super(AddPosition, self).__init__()
         self.layer_norm = nn.LayerNorm(d_model)
-        self.posit_matrix = positional_encoding(timesteps, d_model)
+        self.posit_matrix = positional_encoding(timesteps, d_model).to(device)
         
     def forward(self, x, t):
         return self.layer_norm(x + self.posit_matrix[:, t:t+1 :])
 #%%
 class AddPosition2(nn.Module):
-    def __init__(self, d_model, timesteps):
+    def __init__(self, d_model, timesteps, device):
         super(AddPosition2, self).__init__()
         self.layer_norm = nn.LayerNorm(d_model)
-        self.posit_matrix = positional_encoding(timesteps, d_model)
+        self.posit_matrix = positional_encoding(timesteps, d_model).to(device)
         
     def forward(self, x):
         return self.layer_norm(x + self.posit_matrix)
 #%%
-def scaled_dot_product_attention(q, k, v, d_model, mask):
+def scaled_dot_product_attention(q, k, v, d_model, mask, device):
     matmul_qk = q.matmul(k.permute(0, 1, 3, 2)) # (..., seq_len_q, seq_len_k)
 
     # scale matmul_qk
-    sqrt_d_model = torch.from_numpy(np.sqrt(d_model)[None, ]).to(torch.float32)
+    sqrt_d_model = torch.from_numpy(np.sqrt(d_model)[None, ]).to(torch.float32).to(device)
     scaled_attention_logits = matmul_qk / sqrt_d_model
 
     # add the mask to the scaled tensor.
@@ -57,11 +57,12 @@ def scaled_dot_product_attention(q, k, v, d_model, mask):
     return output, attention_weights
 #%%
 class MultiHeadAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, device):
         super(MultiHeadAttention, self).__init__()
         self.config = config
         self.num_heads = config["num_heads"]
         self.d_model = config["d_model"]
+        self.device = device
 
         assert self.d_model % self.num_heads == 0
 
@@ -96,7 +97,7 @@ class MultiHeadAttention(nn.Module):
         # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
         # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
         scaled_attention, attention_weights = scaled_dot_product_attention(
-            q, k, v, self.config["d_model"], mask)
+            q, k, v, self.config["d_model"], mask, self.device)
 
         scaled_attention = scaled_attention.permute(0, 2, 1, 3)  # (batch_size, seq_len_q, num_heads, depth)
         
@@ -107,17 +108,18 @@ class MultiHeadAttention(nn.Module):
         return output
 #%%
 class PriorModule(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, device):
         super(PriorModule, self).__init__()
         self.config = config
+        self.device = device
         
         self.w0 = nn.Parameter(
-            torch.randn((1, config["timesteps"] + config["future"], config["d_model"])), # (batch_size, timestep, d_model)
+            torch.randn((1, config["timesteps"] + config["future"], config["d_model"])) * 0.1, # (batch_size, timestep, d_model)
             requires_grad=True)
 
-        self.mha1 = MultiHeadAttention(config)
-        self.mha2 = MultiHeadAttention(config)
-        self.mha3 = MultiHeadAttention(config)
+        self.mha1 = MultiHeadAttention(config, device)
+        self.mha2 = MultiHeadAttention(config, device)
+        self.mha3 = MultiHeadAttention(config, device)
 
         self.fc1 = nn.Linear(config["d_model"], config["d_latent"] * 2)
         self.fc2 = nn.Linear(config["d_latent"], config["d_model"])
@@ -126,7 +128,7 @@ class PriorModule(nn.Module):
         self.layer_norm2 = nn.LayerNorm(config["d_model"])
         self.layer_norm3 = nn.LayerNorm(config["d_model"])
 
-        self.add_posit = AddPosition(config["d_model"], config["timesteps"] + config["future"])
+        self.add_posit = AddPosition(config["d_model"], config["timesteps"] + config["future"], device)
         
     def forward(self, h_C, prior_W=None):
         w = self.w0.repeat(h_C.size(0), 1, 1)
@@ -146,7 +148,7 @@ class PriorModule(nn.Module):
 
             mean, logvar = torch.split(self.fc1(w_hat), self.config["d_latent"], dim=2)
 
-            epsilon = torch.randn(mean.shape)
+            epsilon = torch.randn(mean.shape).to(self.device)
 
             z = mean + torch.exp(logvar / 2) * epsilon
 
@@ -161,12 +163,13 @@ class PriorModule(nn.Module):
         return z, mean, logvar
 #%%
 class PosteriorModule(nn.Module):
-    def __init__(self, config, prior):
+    def __init__(self, config, prior, device):
         super(PosteriorModule, self).__init__()
         self.config = config
+        self.device = device
         
         self.prior = prior
-        self.mha = MultiHeadAttention(config)
+        self.mha = MultiHeadAttention(config, device)
         self.fc = nn.Linear(config["d_model"] * 2, config["d_latent"] * 2)
         
     def forward(self, h_C, h_T, prior_W=None):
@@ -191,7 +194,7 @@ class PosteriorModule(nn.Module):
 
             mean, logvar = torch.split(self.fc(w_hat_k), self.config["d_latent"], dim=2)
 
-            epsilon = torch.randn(mean.shape)
+            epsilon = torch.randn(mean.shape).to(self.device)
 
             z = mean + torch.exp(logvar / 2) * epsilon
 

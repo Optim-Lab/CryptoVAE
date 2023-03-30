@@ -3,7 +3,10 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-import layers
+
+import importlib
+layers = importlib.import_module('layers')
+importlib.reload(layers)
 
 from collections import namedtuple
 prior = namedtuple(
@@ -13,24 +16,31 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
-class DDM(nn.Module):
-    def __init__(self, config):
-        super(DDM, self).__init__()
+class VAE(nn.Module):
+    def __init__(self, config, device):
+        super(VAE, self).__init__()
         self.config = config
         self.M = config["M"]
+        self.device = device
         
         """Generative model"""
         self.fc_C = nn.Linear(config["p"], config["d_model"])
-        self.add_posit_C = layers.AddPosition2(config["d_model"], config["timesteps"])
-        self.prior = layers.PriorModule(self.config) 
+        self.add_posit_C = layers.AddPosition2(config["d_model"], config["timesteps"], device)
+        self.prior = layers.PriorModule(self.config, device) 
 
         """Inference model"""
         self.fc_T = nn.Linear(config["p"], config["d_model"])
-        self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] * 2)
-        self.posterior = layers.PosteriorModule(self.config, self.prior) 
+        self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
+        self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
+        # self.spline = nn.ModuleList(
+        #     [nn.Linear(config["d_latent"], (1 + (config["M"] + 1) + (config["M"])) * config["p"])
+        #      for _ in range(config["timesteps"] + config["future"])])
         self.spline = nn.ModuleList(
-            [nn.Linear(config["d_latent"], (1 + (config["M"] + 1) + (config["M"])) * config["p"]) 
+            [nn.Sequential(
+                nn.Linear(config["d_latent"], 8),
+                nn.ELU(),
+                nn.Linear(8, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
             for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
@@ -38,21 +48,24 @@ class DDM(nn.Module):
         gamma = [h_[:, [0]] for h_ in h]
         beta = [nn.Softplus()(h_[:, 1:self.M+2]) for h_ in h] # positive constraint
         delta = [torch.cat([
-            torch.zeros((h_.size(0), 1)),
+            torch.zeros((h_.size(0), 1)).to(self.device),
             nn.Softmax(dim=1)(h_[:, self.M+2:] / self.config["tau"]).cumsum(dim=1)
         ], dim=1) for h_ in h] # positive constraint
         return gamma, beta, delta
     
     def quantile_inverse(self, x, gamma, beta, delta):
         delta_ = delta.unsqueeze(2).repeat(1, 1, self.M + 1)
-        delta_ = torch.where(delta.unsqueeze(1) - delta_ > 0,
-                            delta.unsqueeze(1) - delta_,
-                            torch.zeros(()))
+        delta_ = torch.where(
+            delta.unsqueeze(1) - delta_ > 0,
+            delta.unsqueeze(1) - delta_,
+            torch.zeros(()).to(self.device))
         beta_ = beta.unsqueeze(2).repeat(1, 1, self.M + 1)
         mask = gamma + (beta_ * delta_).sum(dim=1)
-        mask = torch.where(mask <= x, 
-                        mask, 
-                        torch.zeros(())).type(torch.bool).type(torch.float)
+        mask = torch.where(
+            mask <= x, 
+            mask, 
+            torch.zeros(()).to(self.device)
+        ).type(torch.bool).type(torch.float).to(self.device)
         alpha_tilde = x - gamma
         alpha_tilde += (mask * beta * delta).sum(dim=1, keepdims=True)
         alpha_tilde /= (mask * beta).sum(dim=1, keepdims=True) + 1e-6
@@ -74,7 +87,8 @@ class DDM(nn.Module):
         return gamma + (beta * torch.where(
             alpha - delta > 0,
             alpha - delta,
-            torch.zeros(()))).sum(dim=1, keepdims=True)
+            torch.zeros(()).to(self.device)
+            )).sum(dim=1, keepdims=True)
     
     def forward(self, context_batch, target_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
