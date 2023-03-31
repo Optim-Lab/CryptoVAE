@@ -49,10 +49,10 @@ def train_function(context, target, model, iterations, config, optimizer, device
         logs["quantile"] = logs.get("quantile") + quantile_sum
         
         """KL-divergence"""
-        prior_mean = prior.mean.reshape(-1, config["d_latent"])
-        prior_logvar = prior.logvar.reshape(-1, config["d_latent"])
-        posterior_mean = posterior.mean.reshape(-1, config["d_latent"])
-        posterior_logvar = posterior.logvar.reshape(-1, config["d_latent"])
+        prior_mean = torch.cat(prior.mean, dim=0)
+        prior_logvar = torch.cat(prior.logvar, dim=0)
+        posterior_mean = torch.cat(posterior.mean, dim=0)
+        posterior_logvar = torch.cat(posterior.logvar, dim=0)
         
         KL = ((posterior_mean - prior_mean).pow(2) / prior_logvar.exp()).sum(dim=1)
         KL += (prior_logvar - posterior_logvar).sum(dim=1)
@@ -65,7 +65,7 @@ def train_function(context, target, model, iterations, config, optimizer, device
         loss = quantile_sum + config["beta"] * KL
         logs["loss"] = logs.get("loss") + loss
         
-        active = (posterior.logvar.exp().mean(dim=0) < 0.1).to(torch.float32).mean()
+        active = (posterior_logvar.exp().mean(dim=0) < 0.1).to(torch.float32).mean()
         logs["active"] = logs.get("active") + active
         
         loss.backward()

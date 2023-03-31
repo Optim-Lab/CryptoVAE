@@ -114,15 +114,16 @@ class PriorModule(nn.Module):
         self.device = device
         
         self.w0 = nn.Parameter(
-            torch.randn((1, config["timesteps"] + config["future"], config["d_model"])) * 0.1, # (batch_size, timestep, d_model)
+            torch.randn((1, 1, config["d_model"])) * 0.1, # (batch_size, timestep, d_model)
             requires_grad=True)
 
         self.mha1 = MultiHeadAttention(config, device)
         self.mha2 = MultiHeadAttention(config, device)
         self.mha3 = MultiHeadAttention(config, device)
 
-        self.fc1 = nn.Linear(config["d_model"], config["d_latent"] * 2)
+        self.fc1 = nn.Linear(config["d_model"], config["d_latent"])
         self.fc2 = nn.Linear(config["d_latent"], config["d_model"])
+        self.fc3 = nn.Linear(config["d_latent"], config["d_model"])
 
         self.layer_norm1 = nn.LayerNorm(config["d_model"])
         self.layer_norm2 = nn.LayerNorm(config["d_model"])
@@ -146,21 +147,20 @@ class PriorModule(nn.Module):
                 
             w_hat = self.layer_norm2(w_bar + self.mha2(w_bar, h_C, h_C))
 
-            mean, logvar = torch.split(self.fc1(w_hat), self.config["d_latent"], dim=2)
-
+            mean = self.fc1(w_hat)
+            var = self.config["prior_var"] * torch.ones(mean.shape).to(self.device)
+            # mean, logvar = torch.split(self.fc1(w_hat), self.config["d_latent"], dim=2)
             epsilon = torch.randn(mean.shape).to(self.device)
+            z = mean + var.sqrt() * epsilon
+            
+            w_hat = self.add_posit(w_hat + self.fc3(z), i)
+            w = torch.cat([w, w_hat], dim=1)
 
-            z = mean + torch.exp(logvar / 2) * epsilon
-
-            z_list.append(z) 
-            mean_list.append(mean)
-            logvar_list.append(logvar)
+            z_list.append(z.squeeze(1)) 
+            mean_list.append(mean.squeeze(1))
+            logvar_list.append(var.log().squeeze(1))
         
-        z = torch.cat(z_list, dim=1) # (batch_size, timesteps, d_latent)
-        mean = torch.cat(mean_list, dim=1) # (batch_size, timesteps, d_latent)
-        logvar = torch.cat(logvar_list, dim=1) # (batch_size, timesteps, d_latent)
-        
-        return z, mean, logvar
+        return z_list, mean_list, logvar_list
 #%%
 class PosteriorModule(nn.Module):
     def __init__(self, config, prior, device):
@@ -170,7 +170,8 @@ class PosteriorModule(nn.Module):
         
         self.prior = prior
         self.mha = MultiHeadAttention(config, device)
-        self.fc = nn.Linear(config["d_model"] * 2, config["d_latent"] * 2)
+        self.fc1 = nn.Linear(config["d_model"] * 2, config["d_latent"] * 2)
+        self.fc2 = nn.Linear(config["d_latent"], config["d_model"])
         
     def forward(self, h_C, h_T, prior_W=None):
         w = self.prior.w0.repeat(h_T.size(0), 1, 1)
@@ -192,19 +193,16 @@ class PosteriorModule(nn.Module):
             
             w_hat_k = torch.cat([w_hat, k[:, [i], :]], dim=2)
 
-            mean, logvar = torch.split(self.fc(w_hat_k), self.config["d_latent"], dim=2)
-
+            mean, logvar = torch.split(self.fc1(w_hat_k), self.config["d_latent"], dim=2)
             epsilon = torch.randn(mean.shape).to(self.device)
-
             z = mean + torch.exp(logvar / 2) * epsilon
+            
+            w_hat = self.prior.add_posit(w_hat + self.fc2(z), i)
+            w = torch.cat([w, w_hat], dim=1)
 
-            z_list.append(z) 
-            mean_list.append(mean)
-            logvar_list.append(logvar)
+            z_list.append(z.squeeze(1)) 
+            mean_list.append(mean.squeeze(1))
+            logvar_list.append(logvar.squeeze(1))
                            
-        z = torch.cat(z_list, dim=1) # (batch_size, timesteps, d_latent)
-        mean = torch.cat(mean_list, dim=1) # (batch_size, timesteps, d_latent)
-        logvar = torch.cat(logvar_list, dim=1) # (batch_size, timesteps, d_latent)
-        
-        return z, mean, logvar
+        return z_list, mean_list, logvar_list
 #%%

@@ -16,9 +16,9 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
-class DDM(nn.Module):
+class ProTran(nn.Module):
     def __init__(self, config, device):
-        super(DDM, self).__init__()
+        super(ProTran, self).__init__()
         self.config = config
         self.M = config["M"]
         self.device = device
@@ -33,24 +33,26 @@ class DDM(nn.Module):
         self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
-        # self.spline = nn.ModuleList(
-        #     [nn.Linear(config["d_latent"], (1 + (config["M"] + 1) + (config["M"])) * config["p"])
-        #      for _ in range(config["timesteps"] + config["future"])])
         self.spline = nn.ModuleList(
-            [nn.Sequential(
-                nn.Linear(config["d_latent"], 8),
-                nn.ELU(),
-                nn.Linear(8, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
-            for _ in range(config["timesteps"] + config["future"])])
+            [nn.Linear(config["d_latent"], (1 + (config["M"] + 1)) * config["p"])
+             for _ in range(config["timesteps"] + config["future"])])
+        # self.spline = nn.ModuleList(
+        #     [nn.Sequential(
+        #         nn.Linear(config["d_latent"], 8),
+        #         nn.ELU(),
+        #         nn.Linear(8, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
+        #     for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
-        h = torch.split(h, 1 + (self.M + 1) + (self.M), dim=1)
+        h = torch.split(h, 1 + (self.M + 1), dim=1)
         gamma = [h_[:, [0]] for h_ in h]
         beta = [nn.Softplus()(h_[:, 1:self.M+2]) for h_ in h] # positive constraint
-        delta = [torch.cat([
-            torch.zeros((h_.size(0), 1)).to(self.device),
-            nn.Softmax(dim=1)(h_[:, self.M+2:] / self.config["tau"]).cumsum(dim=1)
-        ], dim=1) for h_ in h] # positive constraint
+        delta = [torch.linspace(0, 1, self.config["M"] + 1)[None, :].repeat((h_.size(0), 1))
+                 for h_ in h]
+        # delta = [torch.cat([
+        #     torch.zeros((h_.size(0), 1)).to(self.device),
+        #     nn.Softmax(dim=1)(h_[:, self.M+2:] / self.config["tau"]).cumsum(dim=1)
+        # ], dim=1) for h_ in h] # positive constraint
         return gamma, beta, delta
     
     def quantile_inverse(self, x, gamma, beta, delta):
@@ -75,11 +77,10 @@ class DDM(nn.Module):
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
         _, prior_mean, prior_logvar = self.prior(h_C)
-        return prior_mean, prior_logvar
+        return _, prior_mean, prior_logvar
     
     def get_spline(self, z):
-        spline_feature = list(map(lambda x, d: d(x.squeeze()), 
-            torch.split(z, 1, dim=1), self.spline))
+        spline_feature = list(map(lambda x, d: d(x.squeeze()), z, self.spline))
         params = list(map(lambda x: self.quantile_parameter(x), spline_feature))
         return params
     
