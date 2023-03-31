@@ -16,9 +16,9 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
-class ProTran(nn.Module):
+class LSQF(nn.Module):
     def __init__(self, config, device):
-        super(ProTran, self).__init__()
+        super(LSQF, self).__init__()
         self.config = config
         self.M = config["M"]
         self.device = device

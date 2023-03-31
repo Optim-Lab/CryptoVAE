@@ -57,8 +57,8 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='linear', 
-                        help='Fitting model options: linear, ')
+    parser.add_argument('--model', type=str, default='LSQF', 
+                        help='Fitting model options: LSQF, ')
     
     parser.add_argument("--d_model", default=4, type=int,
                         help="XXX")
