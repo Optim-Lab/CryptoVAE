@@ -60,11 +60,11 @@ def get_args(debug):
     parser.add_argument('--model', type=str, default='ProTran', 
                         help='Fitting model options: VAE, ProTran')
     
-    parser.add_argument("--d_model", default=8, type=int,
+    parser.add_argument("--d_model", default=4, type=int,
                         help="XXX")
-    parser.add_argument("--d_latent", default=2, type=int,
+    parser.add_argument("--d_latent", default=4, type=int,
                         help="XXX")
-    parser.add_argument("--timesteps", default=50, type=int, # equals to C
+    parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
     parser.add_argument("--future", default=1, type=int,
                         help="XXX")
@@ -86,7 +86,7 @@ def get_args(debug):
     
     parser.add_argument('--prior_var', default=0.1, type=float,
                         help='variance of prior distribution')
-    parser.add_argument('--beta', default=5, type=float,
+    parser.add_argument('--beta', default=2, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
   
     if debug:
@@ -168,7 +168,7 @@ def main():
         wandb.log({x : y for x, y in logs.items()})
     #%%
     MC = 5
-    alphas = [0.025, 0.05, 0.1, 0.2]
+    alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     est_quantiles = []
     for a in alphas:
         Qs = []
@@ -193,40 +193,43 @@ def main():
         print('Vrate(alpha={}): {:.3f}'.format(a, vrate))
         wandb.log({f'Vrate(alpha={a})': vrate.item()})
     #%%
-    i = 1
-    a = alphas[i]
-    
+    if not os.path.exists('./assets/{}'.format(config["model"])):
+        os.makedirs('./assets/{}'.format(config["model"]))
+        
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
-    fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
-    for j in range(len(colnames)):
-        axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-                color='black', linestyle='--')
-        axs[j].plot(est_quantiles[i][:, j].numpy(),
-                label=colnames[j] + f'(alpha={a})', color=cols[j])
-        axs[j].legend(loc='upper right')
-        axs[j].set_ylim(-0.2, 0.2)
-        # axs[j].set_ylabel('return', fontsize=12)
-    plt.xlabel('days', fontsize=12)
-    plt.tight_layout()
-    plt.savefig(f'./assets/quantile_estimation.png')
-    # plt.show()
-    plt.close()
-    wandb.log({'Quantile Estimation': wandb.Image(fig)})
+    
+    for i, a in enumerate(alphas):
+        fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
+        for j in range(len(colnames)):
+            axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+                    color='black', linestyle='--')
+            axs[j].plot(est_quantiles[i][:, j].numpy(),
+                    label=colnames[j] + f'(alpha={a})', color=cols[j])
+            axs[j].legend(loc='upper right')
+            axs[j].set_ylim(-0.2, 0.2)
+            # axs[j].set_ylabel('return', fontsize=12)
+        plt.xlabel('days', fontsize=12)
+        plt.tight_layout()
+        plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
+        # plt.show()
+        plt.close()
+        wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
     #%%
-    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
-    for j in range(len(colnames)):
-        plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-                color='black', linestyle='--')
-        plt.plot(est_quantiles[i][:, j].numpy(),
-                label=colnames[j] + f'(alpha={a})', color=cols[j])
-        plt.legend(loc='upper right')
-    plt.ylabel('return', fontsize=12)
-    plt.xlabel('days', fontsize=12)
-    plt.tight_layout()
-    plt.savefig(f'./assets/only_estimations.png')
-    # plt.show()
-    plt.close()
-    wandb.log({'Only Estimations': wandb.Image(fig)})
+    for i, a in enumerate(alphas):
+        fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
+        for j in range(len(colnames)):
+            plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+                    color='black', linestyle='--')
+            plt.plot(est_quantiles[i][:, j].numpy(),
+                    label=colnames[j] + f'(alpha={a})', color=cols[j])
+            plt.legend(loc='upper right')
+        plt.ylabel('return', fontsize=12)
+        plt.xlabel('days', fontsize=12)
+        plt.tight_layout()
+        plt.savefig(f'./assets/{config["model"]}/all_quantile_alpha({a}).png')
+        # plt.show()
+        plt.close()
+        wandb.log({f'Estimations All:alpha({a})': wandb.Image(fig)})
     #%%
     # fig = plt.figure(figsize=(18, 6))
     # ax = fig.add_subplot(111, projection='3d', proj_type='ortho')

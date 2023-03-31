@@ -38,16 +38,16 @@ class ProTran(nn.Module):
              for _ in range(config["timesteps"] + config["future"])])
         # self.spline = nn.ModuleList(
         #     [nn.Sequential(
-        #         nn.Linear(config["d_latent"], 8),
+        #         nn.Linear(config["d_latent"], 32),
         #         nn.ELU(),
-        #         nn.Linear(8, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
+        #         nn.Linear(32, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
         #     for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
         h = torch.split(h, 1 + (self.M + 1), dim=1)
         gamma = [h_[:, [0]] for h_ in h]
         beta = [nn.Softplus()(h_[:, 1:self.M+2]) for h_ in h] # positive constraint
-        delta = [torch.linspace(0, 1, self.config["M"] + 1)[None, :].repeat((h_.size(0), 1))
+        delta = [torch.linspace(0, 1, self.config["M"] + 1)[None, :].repeat((h_.size(0), 1)).to(self.device)
                  for h_ in h]
         # delta = [torch.cat([
         #     torch.zeros((h_.size(0), 1)).to(self.device),

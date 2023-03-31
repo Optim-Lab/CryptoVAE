@@ -57,7 +57,7 @@ class VAE(nn.Module):
         h = torch.split(h, 1 + (self.M + 1), dim=1)
         gamma = [h_[:, [0]] for h_ in h]
         beta = [nn.Softplus()(h_[:, 1:self.M+2]) for h_ in h] # positive constraint
-        delta = [torch.linspace(0, 1, self.config["M"] + 1)[None, :].repeat((h_.size(0), 1))
+        delta = [torch.linspace(0, 1, self.config["M"] + 1)[None, :].repeat((h_.size(0), 1)).to(self.device)
                  for h_ in h]
         # delta = [torch.cat([
         #     torch.zeros((h_.size(0), 1)).to(self.device),
