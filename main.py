@@ -56,7 +56,7 @@ def get_args(debug):
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
     parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD')
+                        help='Fitting model options: LSQF, GLD, KUMA')
     
     parser.add_argument("--d_model", default=4, type=int,
                         help="XXX")
@@ -72,7 +72,7 @@ def get_args(debug):
                         help="XXX")
     # parser.add_argument("--tau", default=2, type=float,
     #                     help="scaling parameter of softmax")
-    parser.add_argument("--K", default=100, type=int,
+    parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
     parser.add_argument('--epochs', default=500, type=int,
@@ -84,9 +84,9 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=0.1, type=float,
+    parser.add_argument('--prior_var', default=1, type=float,
                         help='variance of prior distribution')
-    parser.add_argument('--beta', default=5, type=float,
+    parser.add_argument('--beta', default=2, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
   
     if debug:
@@ -161,8 +161,8 @@ def main():
     train = importlib.import_module('modules.{}_train'.format(config["model"]))
     importlib.reload(train)
     
+    if config["model"] == "KUMA": config["epochs"] = 200
     iterations = len(context) // config["batch_size"] + 1
-    if model == "GLD": config["epochs"] = 1000
     
     for e in range(config["epochs"]):
         logs = train.train_function(context, target, model, iterations, config, optimizer, device)
@@ -187,38 +187,38 @@ def main():
         
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
-    for i, a in enumerate(alphas):
-        fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
-        for j in range(len(colnames)):
-            axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-                    color='black', linestyle='--')
-            axs[j].plot(est_quantiles[i][:, j].numpy(),
-                    label=colnames[j] + f'(alpha={a})', color=cols[j])
-            axs[j].legend(loc='upper right')
-            # axs[j].set_ylim(-0.2, 0.2)
-            # axs[j].set_ylabel('return', fontsize=12)
-        plt.xlabel('days', fontsize=12)
-        plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
-        # plt.show()
-        plt.close()
-        wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
+    # for i, a in enumerate(alphas):
+    #     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
+    #     for j in range(len(colnames)):
+    #         axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+    #                 color='black', linestyle='--')
+    #         axs[j].plot(est_quantiles[i][:, j].numpy(),
+    #                 label=colnames[j] + f'(alpha={a})', color=cols[j])
+    #         axs[j].legend(loc='upper right')
+    #         # axs[j].set_ylim(-0.2, 0.2)
+    #         # axs[j].set_ylabel('return', fontsize=12)
+    #     plt.xlabel('days', fontsize=12)
+    #     plt.tight_layout()
+    #     plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
+    #     # plt.show()
+    #     plt.close()
+    #     wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
     #%%
+    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
     for i, a in enumerate(alphas):
-        fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
         for j in range(len(colnames)):
             plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
                     color='black', linestyle='--')
             plt.plot(est_quantiles[i][:, j].numpy(),
                     label=colnames[j] + f'(alpha={a})', color=cols[j])
-            plt.legend(loc='upper right')
-        plt.ylabel('return', fontsize=12)
-        plt.xlabel('days', fontsize=12)
-        plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/all_quantile_alpha({a}).png')
-        # plt.show()
-        plt.close()
-        wandb.log({f'Estimations All:alpha({a})': wandb.Image(fig)})
+            # plt.legend(loc='upper right')
+    plt.ylabel('return', fontsize=12)
+    plt.xlabel('days', fontsize=12)
+    plt.tight_layout()
+    plt.savefig(f'./assets/{config["model"]}/all_quantile.png')
+    # plt.show()
+    plt.close()
+    wandb.log({f'Estimations All': wandb.Image(fig)})
     #%%
     # fig = plt.figure(figsize=(18, 6))
     # ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
