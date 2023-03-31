@@ -3,6 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
+import tqdm
 
 import importlib
 layers = importlib.import_module('layers')
@@ -40,7 +41,7 @@ class LSQF(nn.Module):
         #     [nn.Sequential(
         #         nn.Linear(config["d_latent"], 32),
         #         nn.ELU(),
-        #         nn.Linear(32, (1 + (config["M"] + 1) + (config["M"])) * config["p"])) 
+        #         nn.Linear(32, (1 + (config["M"] + 1)) * config["p"])) 
         #     for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
@@ -103,4 +104,25 @@ class LSQF(nn.Module):
         return (prior(prior_z, prior_mean, prior_logvar), 
                 posterior(posterior_z, posterior_mean, posterior_logvar),
                 params)
+    
+    def est_quantile(self, test_context, alphas, MC):
+        est_quantiles = []
+        for a in alphas:
+            Qs = []
+            for _ in tqdm.tqdm(range(MC), desc=f"Quantile estimation...(alpha={a})"):
+                with torch.no_grad():
+                    prior_z, prior_mean, prior_logvar = self.get_prior(test_context.to(self.device))
+                    params = self.get_spline(prior_z)
+                
+                gamma = torch.cat(params[-1][0], dim=0)
+                beta = torch.cat(params[-1][1], dim=0)
+                delta = torch.cat(params[-1][2], dim=0)
+                
+                alpha = (torch.ones(gamma.shape) * a).to(self.device)
+                
+                Qs.append(self.quantile_function(
+                    alpha, gamma, beta, delta).reshape(test_context.size(0), self.config["p"])[:, None, :])
+            Qs = torch.cat(Qs, dim=1)
+            est_quantiles.append(Qs.mean(dim=1))
+        return est_quantiles
 #%%
