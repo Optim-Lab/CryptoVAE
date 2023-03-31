@@ -40,8 +40,8 @@ def train_function(context, target, model, iterations, config, optimizer, device
             
             theta1 = theta1.reshape(-1, theta1.size(-1))
             theta2 = theta2.reshape(-1, theta2.size(-1))
-            theta3 = theta3.reshape(-1, theta3.size(-1))
-            theta4 = theta4.reshape(-1, theta4.size(-1))
+            theta3 = theta3.reshape(-1, theta2.size(-1))
+            theta4 = theta4.reshape(-1, theta2.size(-1))
             
             Q = model.quantile_function(tau, theta1, theta2, theta3, theta4)
             residual = target_batch_ - Q

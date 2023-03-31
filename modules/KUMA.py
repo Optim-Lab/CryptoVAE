@@ -17,9 +17,9 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
-class GLD(nn.Module):
+class KUMA(nn.Module):
     def __init__(self, config, device):
-        super(GLD, self).__init__()
+        super(KUMA, self).__init__()
         self.config = config
         self.M = config["M"]
         self.device = device
@@ -46,11 +46,10 @@ class GLD(nn.Module):
     
     def quantile_parameter(self, h):
         h = torch.split(h, 4, dim=1)
-        theta1 = [h_[:, [0]].tanh() for h_ in h]
+        theta1 = [(h_[:, [0]]).exp() for h_ in h]
         theta2 = [(h_[:, [1]]).exp() for h_ in h]
-        # finite support
-        theta3 = [(h_[:, [2]]).exp() for h_ in h]
-        theta4 = [(h_[:, [3]]).exp() for h_ in h]
+        theta3 = [h_[:, [2]] for h_ in h] # min
+        theta4 = [(h_[:, [3]]).exp() for h_ in h] # range (max - min): positive
         return theta1, theta2, theta3, theta4
     
     def get_prior(self, context_batch):
@@ -63,11 +62,12 @@ class GLD(nn.Module):
         params = list(map(lambda x: self.quantile_parameter(x), spline_feature))
         return params
     
-    """Generalized Lambda distribution"""
+    """Kumaraswamy distribution"""
     def quantile_function(self, tau, theta1, theta2, theta3, theta4):
-        Q = (tau ** theta3 - 1) / theta3
-        Q -= ((1 - tau) ** theta4 - 1) / theta4
-        return theta1 + 1 / theta2 * Q
+        Q = (1 - tau) ** (1 / theta2)
+        Q = (1 - Q) ** (1 / theta1)
+        Q = Q * theta4 + theta3
+        return Q
     
     def forward(self, context_batch, target_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
