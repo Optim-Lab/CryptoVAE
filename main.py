@@ -22,8 +22,6 @@ sys.path.append('./modules')
 import importlib
 layers = importlib.import_module('modules.layers')
 importlib.reload(layers)
-train = importlib.import_module('modules.train')
-importlib.reload(train)
 from modules.utils import set_random_seed
 #%%
 import sys
@@ -57,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='LSQF', 
-                        help='Fitting model options: LSQF, ')
+    parser.add_argument('--model', type=str, default='GLD', 
+                        help='Fitting model options: LSQF, GLD')
     
     parser.add_argument("--d_model", default=4, type=int,
                         help="XXX")
@@ -74,6 +72,8 @@ def get_args(debug):
                         help="XXX")
     # parser.add_argument("--tau", default=2, type=float,
     #                     help="scaling parameter of softmax")
+    parser.add_argument("--K", default=100, type=int,
+                        help="XXX")
     
     parser.add_argument('--epochs', default=500, type=int,
                         help='the number of epochs')
@@ -86,7 +86,7 @@ def get_args(debug):
     
     parser.add_argument('--prior_var', default=0.1, type=float,
                         help='variance of prior distribution')
-    parser.add_argument('--beta', default=2, type=float,
+    parser.add_argument('--beta', default=5, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
   
     if debug:
@@ -96,7 +96,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=True)) # default configuration
+    config = vars(get_args(debug=False)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
@@ -144,7 +144,7 @@ def main():
     model_module = importlib.import_module('modules.{}'.format(config["model"]))
     importlib.reload(model_module)
     model = getattr(model_module, config["model"])(config, device).to(device)
-
+    
     optimizer = torch.optim.Adam(
         model.parameters(), 
         lr=config["lr"]
@@ -158,7 +158,12 @@ def main():
     print("Number of Parameters:", num_params)
     wandb.log({'Number of Parameters': num_params})
     #%%
+    train = importlib.import_module('modules.{}_train'.format(config["model"]))
+    importlib.reload(train)
+    
     iterations = len(context) // config["batch_size"] + 1
+    if model == "GLD": config["epochs"] = 1000
+    
     for e in range(config["epochs"]):
         logs = train.train_function(context, target, model, iterations, config, optimizer, device)
         
@@ -167,31 +172,15 @@ def main():
         print(print_input)
         wandb.log({x : y for x, y in logs.items()})
     #%%
-    MC = 5
+    MC = 100
     alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    est_quantiles = []
-    for a in alphas:
-        Qs = []
-        for _ in tqdm.tqdm(range(MC), desc=f"Quantile estimation...(alpha={a})"):
-            with torch.no_grad():
-                prior_z, prior_mean, prior_logvar = model.get_prior(test_context.to(device))
-                params = model.get_spline(prior_z)
-            
-            gamma = torch.cat(params[-1][0], dim=0)
-            beta = torch.cat(params[-1][1], dim=0)
-            delta = torch.cat(params[-1][2], dim=0)
-            
-            alpha = (torch.ones(gamma.shape) * a).to(device)
-            
-            Qs.append(model.quantile_function(
-                alpha, gamma, beta, delta).reshape(test_context.size(0), config["p"])[:, None, :])
-        Qs = torch.cat(Qs, dim=1)
-        est_quantiles.append(Qs.mean(dim=1))
+    est_quantiles = model.est_quantile(test_context, alphas, MC)
     #%%
     for i, a in enumerate(alphas):
         vrate = (test_target[:, -1, :] < est_quantiles[i]).to(torch.float32).mean()
-        print('Vrate(alpha={}): {:.3f}'.format(a, vrate))
+        print('Vrate(alpha={}): {:.3f}'.format(a, vrate), ', Hit(alpha={}): {:.3f}'.format(a, a - vrate))
         wandb.log({f'Vrate(alpha={a})': vrate.item()})
+        wandb.log({f'Hit(alpha={a})': (a - vrate).item()})
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
@@ -206,7 +195,7 @@ def main():
             axs[j].plot(est_quantiles[i][:, j].numpy(),
                     label=colnames[j] + f'(alpha={a})', color=cols[j])
             axs[j].legend(loc='upper right')
-            axs[j].set_ylim(-0.2, 0.2)
+            # axs[j].set_ylim(-0.2, 0.2)
             # axs[j].set_ylabel('return', fontsize=12)
         plt.xlabel('days', fontsize=12)
         plt.tight_layout()
