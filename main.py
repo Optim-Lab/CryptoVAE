@@ -36,7 +36,7 @@ except:
     import wandb
 
 run = wandb.init(
-    project="DDM", 
+    project="ProTran", 
     entity="anseunghwan",
     # tags=[''],
 )
@@ -55,7 +55,7 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD', 
+    parser.add_argument('--model', type=str, default='LSQF', 
                         help='Fitting model options: LSQF, GLD, KUMA')
     
     parser.add_argument("--d_model", default=4, type=int,
@@ -75,7 +75,7 @@ def get_args(debug):
     parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
-    parser.add_argument('--epochs', default=500, type=int,
+    parser.add_argument('--epochs', default=300, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,
                         help='batch size')
@@ -84,7 +84,7 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=1, type=float,
+    parser.add_argument('--prior_var', default=0.1, type=float,
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=2, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
@@ -96,7 +96,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=False)) # default configuration
+    config = vars(get_args(debug=True)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
@@ -109,10 +109,17 @@ def main():
     df = pd.read_csv(
         './data/' + os.listdir('./data')[0],
         index_col=0
-    )
+    ).iloc[:, :4]
+    
+    """Standardization"""
+    test_len = 100
+    mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
+    std_ = df.iloc[:-test_len].std(axis=0) # train std
+    df = (df - mean_) / std_
+    df.describe()
     df.head()
+    
     colnames = df.columns
-
     config["p"] = df.shape[1]
     #%%
     def stock_data_generator(df, C, tau):
@@ -135,7 +142,6 @@ def main():
     assert context.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
     assert target.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
-    test_len = 100
     test_context = context[-test_len:]
     test_target = target[-test_len:]
     context = context[:-test_len]
@@ -161,7 +167,6 @@ def main():
     train = importlib.import_module('modules.{}_train'.format(config["model"]))
     importlib.reload(train)
     
-    if config["model"] == "KUMA": config["epochs"] = 200
     iterations = len(context) // config["batch_size"] + 1
     
     for e in range(config["epochs"]):
@@ -172,21 +177,40 @@ def main():
         print(print_input)
         wandb.log({x : y for x, y in logs.items()})
     #%%
-    MC = 100
-    alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    MC = 50
+    alphas = [0.05]
+    # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     est_quantiles = model.est_quantile(test_context, alphas, MC)
     #%%
     for i, a in enumerate(alphas):
-        vrate = (test_target[:, -1, :] < est_quantiles[i]).to(torch.float32).mean()
-        print('Vrate(alpha={}): {:.3f}'.format(a, vrate), ', Hit(alpha={}): {:.3f}'.format(a, a - vrate))
-        wandb.log({f'Vrate(alpha={a})': vrate.item()})
-        wandb.log({f'Hit(alpha={a})': (a - vrate).item()})
+        vrate = (test_target[:, -1, :] < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        for j, name in enumerate(colnames):
+            print('Vrate([{}], alpha={}): {:.2f}'.format(name, a, vrate[j]), 
+                  ', Hit([{}], alpha={}): {:.2f}'.format(name, a, (a - vrate[j]).abs()))
+            wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
+            wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
         
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
+    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
+    for i, a in enumerate(alphas):
+        for j in range(len(colnames)):
+            plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+                    color='black', linestyle='--')
+            plt.plot(est_quantiles[i][:, j].numpy(),
+                    label=colnames[j] + f'(alpha={a})', color=cols[j])
+            # plt.legend(loc='upper right')
+    plt.ylabel('return', fontsize=12)
+    plt.xlabel('days', fontsize=12)
+    plt.tight_layout()
+    plt.savefig(f'./assets/{config["model"]}/all_quantile.png')
+    # plt.show()
+    plt.close()
+    wandb.log({f'Estimations All': wandb.Image(fig)})
+    #%%
     # for i, a in enumerate(alphas):
     #     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
     #     for j in range(len(colnames)):
@@ -203,22 +227,6 @@ def main():
     #     # plt.show()
     #     plt.close()
     #     wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
-    #%%
-    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
-    for i, a in enumerate(alphas):
-        for j in range(len(colnames)):
-            plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-                    color='black', linestyle='--')
-            plt.plot(est_quantiles[i][:, j].numpy(),
-                    label=colnames[j] + f'(alpha={a})', color=cols[j])
-            # plt.legend(loc='upper right')
-    plt.ylabel('return', fontsize=12)
-    plt.xlabel('days', fontsize=12)
-    plt.tight_layout()
-    plt.savefig(f'./assets/{config["model"]}/all_quantile.png')
-    # plt.show()
-    plt.close()
-    wandb.log({f'Estimations All': wandb.Image(fig)})
     #%%
     # fig = plt.figure(figsize=(18, 6))
     # ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
