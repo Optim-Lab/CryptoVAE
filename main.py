@@ -6,7 +6,6 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
 import tqdm
-from PIL import Image
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
@@ -55,10 +54,10 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='LSQF', 
+    parser.add_argument('--model', type=str, default='KUMA', 
                         help='Fitting model options: LSQF, GLD, KUMA')
     
-    parser.add_argument("--d_model", default=4, type=int,
+    parser.add_argument("--d_model", default=8, type=int,
                         help="XXX")
     parser.add_argument("--d_latent", default=4, type=int,
                         help="XXX")
@@ -68,6 +67,8 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
+    parser.add_argument("--num_layer", default=2, type=int,
+                        help="XXX")
     parser.add_argument("--M", default=10, type=int,
                         help="XXX")
     # parser.add_argument("--tau", default=2, type=float,
@@ -75,7 +76,7 @@ def get_args(debug):
     parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
-    parser.add_argument('--epochs', default=300, type=int,
+    parser.add_argument('--epochs', default=2, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,
                         help='batch size')
@@ -96,7 +97,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=True)) # default configuration
+    config = vars(get_args(debug=False)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
@@ -113,8 +114,8 @@ def main():
     
     """Standardization"""
     test_len = 100
-    mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
-    std_ = df.iloc[:-test_len].std(axis=0) # train std
+    mean_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].mean(axis=0) # train mean
+    std_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].std(axis=0) # train std
     df = (df - mean_) / std_
     df.describe()
     df.head()
@@ -142,6 +143,7 @@ def main():
     assert context.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
     assert target.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
+    """train, test splie"""
     test_context = context[-test_len:]
     test_target = target[-test_len:]
     context = context[:-test_len]
@@ -182,6 +184,11 @@ def main():
     # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     est_quantiles = model.est_quantile(test_context, alphas, MC)
     #%%
+    """un-standardization"""
+    test_target = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+     ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
+    est_quantiles = [x.cpu() * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
+    #%%
     for i, a in enumerate(alphas):
         vrate = (test_target[:, -1, :] < est_quantiles[i]).to(torch.float32).mean(dim=0)
         for j, name in enumerate(colnames):
@@ -200,7 +207,7 @@ def main():
         for j in range(len(colnames)):
             plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
                     color='black', linestyle='--')
-            plt.plot(est_quantiles[i][:, j].numpy(),
+            plt.plot(est_quantiles[i][:, j].cpu().numpy(),
                     label=colnames[j] + f'(alpha={a})', color=cols[j])
             # plt.legend(loc='upper right')
     plt.ylabel('return', fontsize=12)

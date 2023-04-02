@@ -5,7 +5,7 @@ import torch
 # import wandb
 #%%
 def train_function(context, target, model, iterations, config, optimizer, device):
-    tau = torch.linspace(0.01, 0.99, config["K"]).unsqueeze(0)    
+    tau = torch.linspace(0.01, 0.99, config["K"]).unsqueeze(0).to(device)
     # tau = torch.cat([
     #     torch.linspace(0.01, 0.09, 9).unsqueeze(0),
     #     torch.linspace(0.1, 0.9, config["K"]).unsqueeze(0)    
@@ -26,7 +26,6 @@ def train_function(context, target, model, iterations, config, optimizer, device
         optimizer.zero_grad()
         
         prior, posterior, params = model(context_batch, target_batch)
-        len(params[0][0])
         
         j = 0 # coin
         quantile_sum = 0
@@ -51,10 +50,10 @@ def train_function(context, target, model, iterations, config, optimizer, device
         logs["quantile"] = logs.get("quantile") + quantile_sum
         
         """KL-divergence"""
-        prior_mean = torch.cat(prior.mean, dim=0)
-        prior_logvar = torch.cat(prior.logvar, dim=0)
-        posterior_mean = torch.cat(posterior.mean, dim=0)
-        posterior_logvar = torch.cat(posterior.logvar, dim=0)
+        prior_mean = torch.cat([torch.cat(prior.mean[i], dim=0) for i in range(len(prior.mean))], dim=0)
+        prior_logvar = torch.cat([torch.cat(prior.logvar[i], dim=0) for i in range(len(prior.logvar))], dim=0)
+        posterior_mean = torch.cat([torch.cat(posterior.mean[i], dim=0) for i in range(len(posterior.mean))], dim=0)
+        posterior_logvar = torch.cat([torch.cat(posterior.logvar[i], dim=0) for i in range(len(posterior.logvar))], dim=0)
         
         KL = ((posterior_mean - prior_mean).pow(2) / prior_logvar.exp()).sum(dim=1)
         KL += (prior_logvar - posterior_logvar).sum(dim=1)

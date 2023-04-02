@@ -77,8 +77,8 @@ class LSQF(nn.Module):
     
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
-        _, prior_mean, prior_logvar = self.prior(h_C)
-        return _, prior_mean, prior_logvar
+        prior_w, prior_z, prior_mean, prior_logvar = self.prior(h_C)
+        return prior_w, prior_z, prior_mean, prior_logvar
     
     def get_spline(self, z):
         spline_feature = list(map(lambda x, d: d(x.squeeze()), z, self.spline))
@@ -96,13 +96,34 @@ class LSQF(nn.Module):
         h_C = self.add_posit_C(self.fc_C(context_batch))
         h_T = self.add_posit_T(self.fc_T(target_batch))
         
-        prior_z, prior_mean, prior_logvar = self.prior(h_C)
-        posterior_z, posterior_mean, posterior_logvar = self.posterior(h_C, h_T)
+        prior_z_list = []
+        prior_mean_list = []
+        prior_logvar_list = []
         
-        params = self.get_spline(posterior_z)
+        posterior_z_list = []
+        posterior_mean_list = []
+        posterior_logvar_list = []
+        
+        for i in range(self.config["num_layer"]):
+            if i == 0:
+                prior_w, prior_z, prior_mean, prior_logvar = self.prior(h_C)
+                posterior_w, posterior_z, posterior_mean, posterior_logvar = self.posterior(h_C, h_T)
+            else:
+                prior_w, prior_z, prior_mean, prior_logvar = self.prior(h_C, torch.cat(prior_w, dim=1))
+                posterior_w, posterior_z, posterior_mean, posterior_logvar = self.posterior(h_C, h_T, torch.cat(posterior_w, dim=1))
+
+            prior_z_list.append(prior_z)
+            prior_mean_list.append(prior_mean)
+            prior_logvar_list.append(prior_logvar)
             
-        return (prior(prior_z, prior_mean, prior_logvar), 
-                posterior(posterior_z, posterior_mean, posterior_logvar),
+            posterior_z_list.append(posterior_z)
+            posterior_mean_list.append(posterior_mean)
+            posterior_logvar_list.append(posterior_logvar)
+            
+        params = self.get_spline(posterior_z)
+        
+        return (prior(prior_z_list, prior_mean_list, prior_logvar_list), 
+                posterior(posterior_z_list, posterior_mean_list, posterior_logvar_list),
                 params)
     
     def est_quantile(self, test_context, alphas, MC):
@@ -111,7 +132,7 @@ class LSQF(nn.Module):
             Qs = []
             for _ in tqdm.tqdm(range(MC), desc=f"Quantile estimation...(alpha={a})"):
                 with torch.no_grad():
-                    prior_z, prior_mean, prior_logvar = self.get_prior(test_context.to(self.device))
+                    _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                     params = self.get_spline(prior_z)
                 
                 gamma = torch.cat(params[-1][0], dim=0)

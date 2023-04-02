@@ -134,6 +134,7 @@ class PriorModule(nn.Module):
     def forward(self, h_C, prior_W=None):
         w = self.w0.repeat(h_C.size(0), 1, 1)
         
+        w_list = []
         z_list = []
         mean_list = []
         logvar_list = []
@@ -156,11 +157,12 @@ class PriorModule(nn.Module):
             w_hat = self.add_posit(w_hat + self.fc3(z), i)
             w = torch.cat([w, w_hat], dim=1)
 
+            w_list.append(w_hat)
             z_list.append(z.squeeze(1)) 
             mean_list.append(mean.squeeze(1))
             logvar_list.append(var.log().squeeze(1))
         
-        return z_list, mean_list, logvar_list
+        return w_list, z_list, mean_list, logvar_list
 #%%
 class PosteriorModule(nn.Module):
     def __init__(self, config, prior, device):
@@ -176,6 +178,7 @@ class PosteriorModule(nn.Module):
     def forward(self, h_C, h_T, prior_W=None):
         w = self.prior.w0.repeat(h_T.size(0), 1, 1)
         
+        w_list = []
         z_list = []
         mean_list = []
         logvar_list = []
@@ -200,9 +203,10 @@ class PosteriorModule(nn.Module):
             w_hat = self.prior.add_posit(w_hat + self.fc2(z), i)
             w = torch.cat([w, w_hat], dim=1)
 
+            w_list.append(w_hat)
             z_list.append(z.squeeze(1)) 
             mean_list.append(mean.squeeze(1))
             logvar_list.append(logvar.squeeze(1))
                            
-        return z_list, mean_list, logvar_list
+        return w_list, z_list, mean_list, logvar_list
 #%%
