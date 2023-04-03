@@ -76,7 +76,7 @@ def get_args(debug):
     parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
-    parser.add_argument('--epochs', default=2, type=int,
+    parser.add_argument('--epochs', default=200, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,
                         help='batch size')
@@ -179,7 +179,7 @@ def main():
         print(print_input)
         wandb.log({x : y for x, y in logs.items()})
     #%%
-    MC = 50
+    MC = 100
     alphas = [0.05]
     # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     est_quantiles = model.est_quantile(test_context, alphas, MC)
