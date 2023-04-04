@@ -54,13 +54,13 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='LSQF', 
+    parser.add_argument('--model', type=str, default='GLD', 
                         help='Fitting model options: LSQF, GLD, KUMA')
     parser.add_argument('--standardize', action='store_false')
     
-    parser.add_argument("--d_model", default=16, type=int,
+    parser.add_argument("--d_model", default=8, type=int,
                         help="XXX")
-    parser.add_argument("--d_latent", default=8, type=int,
+    parser.add_argument("--d_latent", default=4, type=int,
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
@@ -68,7 +68,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
-    parser.add_argument("--num_layer", default=2, type=int,
+    parser.add_argument("--num_layer", default=1, type=int,
                         help="XXX")
     parser.add_argument("--M", default=10, type=int,
                         help="XXX")
@@ -88,7 +88,7 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=1, type=float,
+    parser.add_argument('--prior_var', default=0.1, type=float,
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
@@ -118,8 +118,8 @@ def main():
     """Standardization"""
     test_len = 500
     if config["standardize"]:
-        mean_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].mean(axis=0) # train mean
-        std_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].std(axis=0) # train std
+        mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
+        std_ = df.iloc[:-test_len].std(axis=0) # train std
         df = (df - mean_) / std_
     df.describe()
     df.head()
@@ -128,8 +128,11 @@ def main():
     config["p"] = df.shape[1]
     #%%
     """train, test split"""
-    train = df.iloc[:-(test_len + config["timesteps"] + config["future"])]
-    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
+    train = df.iloc[:-test_len]
+    test = df.iloc[-(test_len + config["timesteps"] + 1):]
+    
+    train.to_csv('./data/train.csv')
+    test.to_csv('./data/test.csv')
     
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
@@ -191,46 +194,53 @@ def main():
     samples = model.sampling(test_context, config["MC"])
     #%%
     if config["standardize"]:
-        test_target = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+        test_target_ = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
             ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
         est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
         samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
     #%%
+    if not os.path.exists('./assets/{}'.format(config["model"])):
+        os.makedirs('./assets/{}'.format(config["model"]))
+    if not os.path.exists('./assets/out/{}'.format(config["model"])):
+        os.makedirs('./assets/out/{}'.format(config["model"]))
+    #%%
     """Vrate and Hit"""
-    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    wandb.run.summary['test_data'] = wandb.Table(
-        data=pd.DataFrame(
+    test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    df = pd.DataFrame(
         test_target_.numpy(),
         columns=colnames
-    ))
+    )
+    df.to_csv(f'./assets/out/{config["model"]}/test_data.csv')
+    wandb.run.summary['test_data'] = wandb.Table(
+        data=df)
     
     for i, a in enumerate(alphas):
         vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
         for j, name in enumerate(colnames):
-            print('Vrate([{}], alpha={}): {:.2f}'.format(name, a, vrate[j]), 
-                  ', Hit([{}], alpha={}): {:.2f}'.format(name, a, (a - vrate[j]).abs()))
+            print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
+                  ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
             wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
             wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
-
-        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
-            data=pd.DataFrame(
+        df = pd.DataFrame(
             est_quantiles[i].numpy(),
             columns=colnames     
-        ))
+        )
+        df.to_csv(f'./assets/out/{config["model"]}/VaR(alpha={a}).csv')
+        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
+            data=df)
     #%%
     """Expected Shortfall"""
     for i, a in enumerate(alphas):
         residual = samples - est_quantiles[i][:, None, :]
         ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
-        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
-            data=pd.DataFrame(
+        df = pd.DataFrame(
             ES.numpy(),
             columns=colnames
-        ))
+        )
+        df.to_csv(f'./assets/out/{config["model"]}/ES(alpha={a}).csv')
+        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
+            data=df)
     #%%
-    if not os.path.exists('./assets/{}'.format(config["model"])):
-        os.makedirs('./assets/{}'.format(config["model"]))
-        
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
     fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
@@ -249,46 +259,57 @@ def main():
     plt.close()
     wandb.log({f'Estimations All': wandb.Image(fig)})
     #%%
-    # for i, a in enumerate(alphas):
-    #     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
-    #     for j in range(len(colnames)):
-    #         axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-    #                 color='black', linestyle='--')
-    #         axs[j].plot(est_quantiles[i][:, j].numpy(),
-    #                 label=colnames[j] + f'(alpha={a})', color=cols[j])
-    #         axs[j].legend(loc='upper right')
-    #         # axs[j].set_ylim(-0.2, 0.2)
-    #         # axs[j].set_ylabel('return', fontsize=12)
-    #     plt.xlabel('days', fontsize=12)
-    #     plt.tight_layout()
-    #     plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
-    #     # plt.show()
-    #     plt.close()
-    #     wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
-    #%%
-    # fig = plt.figure(figsize=(18, 6))
-    # ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
-    # for j in range(len(colnames)):
-    #     ax.plot(
-    #         np.arange(test_context.size(0)), 
-    #         est_quantiles[1][::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(), 
-    #         zs=j, zdir='x', label=colnames[j])
-    #     ax.plot(
-    #         np.arange(test_context.size(0)), 
-    #         test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-    #         zs=j, zdir='x', color='black', linewidth=2)
-    # ax.set_xticks(range(len(colnames)))
-    # ax.set_xticklabels(list(colnames))
-    # ax.view_init(45, 45)
-    # plt.tight_layout()
-    # plt.legend()
-    # plt.savefig(f'./assets/test.png')
-    # # plt.show()
-    # plt.close()
+    """model save"""
+    torch.save(model.state_dict(), './assets/{}.pth'.format(config["model"]))
+    artifact = wandb.Artifact('{}'.format(config["model"]), 
+                            type='model',
+                            metadata=config) # description=""
+    artifact.add_file(f'./assets/{config["model"]}.pth')
+    artifact.add_file('./main.py')
+    artifact.add_file(f'./modules/{config["model"]}.py')
+    artifact.add_file(f'./modules/{config["model"]}_train.py')
+    wandb.log_artifact(artifact)
     #%%
     wandb.config.update(config, allow_val_change=True)
     wandb.run.finish()
 #%%
 if __name__ == '__main__':
     main()
+#%%
+# for i, a in enumerate(alphas):
+#     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
+#     for j in range(len(colnames)):
+#         axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+#                 color='black', linestyle='--')
+#         axs[j].plot(est_quantiles[i][:, j].numpy(),
+#                 label=colnames[j] + f'(alpha={a})', color=cols[j])
+#         axs[j].legend(loc='upper right')
+#         # axs[j].set_ylim(-0.2, 0.2)
+#         # axs[j].set_ylabel('return', fontsize=12)
+#     plt.xlabel('days', fontsize=12)
+#     plt.tight_layout()
+#     plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
+#     # plt.show()
+#     plt.close()
+#     wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
+#%%
+# fig = plt.figure(figsize=(18, 6))
+# ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
+# for j in range(len(colnames)):
+#     ax.plot(
+#         np.arange(test_context.size(0)), 
+#         est_quantiles[1][::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(), 
+#         zs=j, zdir='x', label=colnames[j])
+#     ax.plot(
+#         np.arange(test_context.size(0)), 
+#         test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+#         zs=j, zdir='x', color='black', linewidth=2)
+# ax.set_xticks(range(len(colnames)))
+# ax.set_xticklabels(list(colnames))
+# ax.view_init(45, 45)
+# plt.tight_layout()
+# plt.legend()
+# plt.savefig(f'./assets/test.png')
+# # plt.show()
+# plt.close()
 #%%
