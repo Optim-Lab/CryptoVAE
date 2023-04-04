@@ -126,11 +126,11 @@ class LSQF(nn.Module):
                 posterior(posterior_z_list, posterior_mean_list, posterior_logvar_list),
                 params)
     
-    def est_quantile(self, test_context, alphas, MC):
+    def est_quantile(self, test_context, alphas, MC, disable=False):
         est_quantiles = []
         for a in alphas:
             Qs = []
-            for _ in tqdm.tqdm(range(MC), desc=f"Quantile estimation...(alpha={a})"):
+            for _ in tqdm.tqdm(range(MC), desc=f"Quantile estimation...(alpha={a})", disable=disable):
                 with torch.no_grad():
                     _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                     params = self.get_spline(prior_z)
@@ -147,9 +147,9 @@ class LSQF(nn.Module):
             est_quantiles.append(Qs.mean(dim=1).cpu())
         return est_quantiles, Qs
     
-    def sampling(self, test_context, MC):
+    def sampling(self, test_context, MC, disable=False):
         samples = []
-        for _ in tqdm.tqdm(range(MC), desc=f"Data sampling..."):
+        for _ in tqdm.tqdm(range(MC), desc=f"Data sampling...", disable=disable):
             with torch.no_grad():
                 _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                 params = self.get_spline(prior_z)
