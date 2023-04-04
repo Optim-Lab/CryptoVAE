@@ -131,9 +131,6 @@ def main():
     train = df.iloc[:-(test_len + config["timesteps"] + config["future"])]
     test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
     
-    train.to_csv('./data/train.csv')
-    test.to_csv('./data/test.csv')
-    
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
             
