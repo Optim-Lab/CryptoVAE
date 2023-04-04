@@ -54,12 +54,13 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='KUMA', 
+    parser.add_argument('--model', type=str, default='LSQF', 
                         help='Fitting model options: LSQF, GLD, KUMA')
+    parser.add_argument('--standardize', action='store_false')
     
-    parser.add_argument("--d_model", default=8, type=int,
+    parser.add_argument("--d_model", default=16, type=int,
                         help="XXX")
-    parser.add_argument("--d_latent", default=4, type=int,
+    parser.add_argument("--d_latent", default=8, type=int,
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
@@ -76,6 +77,8 @@ def get_args(debug):
     parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
+    parser.add_argument("--MC", default=100, type=int,
+                        help="XXX")
     parser.add_argument('--epochs', default=200, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,
@@ -85,9 +88,9 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=0.1, type=float,
+    parser.add_argument('--prior_var', default=1, type=float,
                         help='variance of prior distribution')
-    parser.add_argument('--beta', default=2, type=float,
+    parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
   
     if debug:
@@ -108,21 +111,29 @@ def main():
         torch.cuda.manual_seed(config["seed"])
     #%%
     df = pd.read_csv(
-        './data/' + os.listdir('./data')[0],
+        './data/df_upbit_top8_krw_181116.csv',
         index_col=0
-    ).iloc[:, :4]
+    )[['KRW-BTC', 'KRW-ETH', 'KRW-ADA', 'KRW-TRX', 'KRW-ETC']]
     
     """Standardization"""
-    test_len = 100
-    mean_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].mean(axis=0) # train mean
-    std_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].std(axis=0) # train std
-    df = (df - mean_) / std_
+    test_len = 500
+    if config["standardize"]:
+        mean_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].mean(axis=0) # train mean
+        std_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].std(axis=0) # train std
+        df = (df - mean_) / std_
     df.describe()
     df.head()
     
     colnames = df.columns
     config["p"] = df.shape[1]
     #%%
+    """train, test split"""
+    train = df.iloc[:-(test_len + config["timesteps"] + config["future"])]
+    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
+    
+    train.to_csv('./data/train.csv')
+    test.to_csv('./data/test.csv')
+    
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
             
@@ -139,15 +150,13 @@ def main():
         infer_data = torch.from_numpy(infer_data).to(torch.float32)
         return input_data, infer_data
 
-    context, target = stock_data_generator(df, config["timesteps"], config["future"])
-    assert context.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
-    assert target.shape == (df.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
-    #%%
-    """train, test splie"""
-    test_context = context[-test_len:]
-    test_target = target[-test_len:]
-    context = context[:-test_len]
-    target = target[:-test_len]
+    train_context, train_target = stock_data_generator(train, config["timesteps"], config["future"])
+    test_context, test_target = stock_data_generator(test, config["timesteps"], config["future"])
+    
+    assert train_context.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+    assert train_target.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+    assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+    assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
     model_module = importlib.import_module('modules.{}'.format(config["model"]))
     importlib.reload(model_module)
@@ -166,36 +175,61 @@ def main():
     print("Number of Parameters:", num_params)
     wandb.log({'Number of Parameters': num_params})
     #%%
-    train = importlib.import_module('modules.{}_train'.format(config["model"]))
-    importlib.reload(train)
+    train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
+    importlib.reload(train_module)
     
-    iterations = len(context) // config["batch_size"] + 1
+    iterations = len(train_context) // config["batch_size"] + 1
     
     for e in range(config["epochs"]):
-        logs = train.train_function(context, target, model, iterations, config, optimizer, device)
+        logs = train_module.train_function(train_context, train_target, model, iterations, config, optimizer, device)
         
         print_input = "[EPOCH {:03d}]".format(e + 1)
         print_input += ''.join([', {}: {:.4f}'.format(x, y.item() / iterations) for x, y in logs.items()])
         print(print_input)
         wandb.log({x : y for x, y in logs.items()})
     #%%
-    MC = 100
-    alphas = [0.05]
+    alphas = [0.025, 0.05]
     # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    est_quantiles = model.est_quantile(test_context, alphas, MC)
+    est_quantiles, Qs = model.est_quantile(test_context, alphas, config["MC"])
+    samples = model.sampling(test_context, config["MC"])
     #%%
-    """un-standardization"""
-    test_target = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-     ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
-    est_quantiles = [x.cpu() * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
+    if config["standardize"]:
+        test_target = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+            ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
+        est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
+        samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
     #%%
+    """Vrate and Hit"""
+    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    wandb.run.summary['test_data'] = wandb.Table(
+        data=pd.DataFrame(
+        test_target_.numpy(),
+        columns=colnames
+    ))
+    
     for i, a in enumerate(alphas):
-        vrate = (test_target[:, -1, :] < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
         for j, name in enumerate(colnames):
             print('Vrate([{}], alpha={}): {:.2f}'.format(name, a, vrate[j]), 
                   ', Hit([{}], alpha={}): {:.2f}'.format(name, a, (a - vrate[j]).abs()))
             wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
             wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
+
+        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
+            data=pd.DataFrame(
+            est_quantiles[i].numpy(),
+            columns=colnames     
+        ))
+    #%%
+    """Expected Shortfall"""
+    for i, a in enumerate(alphas):
+        residual = samples - est_quantiles[i][:, None, :]
+        ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
+        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
+            data=pd.DataFrame(
+            ES.numpy(),
+            columns=colnames
+        ))
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
@@ -205,9 +239,9 @@ def main():
     fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
     for i, a in enumerate(alphas):
         for j in range(len(colnames)):
-            plt.plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
+            plt.plot(test_target_.numpy(),
                     color='black', linestyle='--')
-            plt.plot(est_quantiles[i][:, j].cpu().numpy(),
+            plt.plot(est_quantiles[i][:, j].numpy(),
                     label=colnames[j] + f'(alpha={a})', color=cols[j])
             # plt.legend(loc='upper right')
     plt.ylabel('return', fontsize=12)
