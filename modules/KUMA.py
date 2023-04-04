@@ -122,6 +122,25 @@ class KUMA(nn.Module):
                 Qs.append(self.quantile_function(
                     alpha, theta1, theta2, theta3, theta4).reshape(test_context.size(0), self.config["p"])[:, None, :])
             Qs = torch.cat(Qs, dim=1)
-            est_quantiles.append(Qs.mean(dim=1))
-        return est_quantiles
+            est_quantiles.append(Qs.mean(dim=1).cpu())
+        return est_quantiles, Qs
+    
+    def sampling(self, test_context, MC):
+        samples = []
+        for _ in tqdm.tqdm(range(MC), desc=f"Data sampling..."):
+            with torch.no_grad():
+                _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
+                params = self.get_spline(prior_z)
+            
+            theta1 = torch.cat(params[-1][0], dim=0)
+            theta2 = torch.cat(params[-1][1], dim=0)
+            theta3 = torch.cat(params[-1][2], dim=0)
+            theta4 = torch.cat(params[-1][3], dim=0)
+            
+            alpha = torch.rand(theta1.shape).to(self.device)
+            
+            samples.append(self.quantile_function(
+                alpha, theta1, theta2, theta3, theta4).reshape(test_context.size(0), self.config["p"])[:, None, :])
+        samples = torch.cat(samples, dim=1)
+        return samples.cpu()
 #%%

@@ -144,6 +144,24 @@ class LSQF(nn.Module):
                 Qs.append(self.quantile_function(
                     alpha, gamma, beta, delta).reshape(test_context.size(0), self.config["p"])[:, None, :])
             Qs = torch.cat(Qs, dim=1)
-            est_quantiles.append(Qs.mean(dim=1))
-        return est_quantiles
+            est_quantiles.append(Qs.mean(dim=1).cpu())
+        return est_quantiles, Qs
+    
+    def sampling(self, test_context, MC):
+        samples = []
+        for _ in tqdm.tqdm(range(MC), desc=f"Data sampling..."):
+            with torch.no_grad():
+                _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
+                params = self.get_spline(prior_z)
+            
+            gamma = torch.cat(params[-1][0], dim=0)
+            beta = torch.cat(params[-1][1], dim=0)
+            delta = torch.cat(params[-1][2], dim=0)
+            
+            alpha = torch.rand(gamma.shape).to(self.device)
+            
+            samples.append(self.quantile_function(
+                alpha, gamma, beta, delta).reshape(test_context.size(0), self.config["p"])[:, None, :])
+        samples = torch.cat(samples, dim=1)
+        return samples.cpu()
 #%%
