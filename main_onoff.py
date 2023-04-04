@@ -37,7 +37,7 @@ except:
 run = wandb.init(
     project="ProTran", 
     entity="anseunghwan",
-    # tags=[''],
+    tags=['Why...?'],
 )
 #%%
 import argparse
@@ -54,13 +54,13 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='LSQF', 
+    parser.add_argument('--model', type=str, default='GLD', 
                         help='Fitting model options: LSQF, GLD, KUMA')
     parser.add_argument('--standardize', action='store_false')
     
-    parser.add_argument("--d_model", default=16, type=int,
+    parser.add_argument("--d_model", default=8, type=int,
                         help="XXX")
-    parser.add_argument("--d_latent", default=8, type=int,
+    parser.add_argument("--d_latent", default=4, type=int,
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
@@ -68,7 +68,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
-    parser.add_argument("--num_layer", default=2, type=int,
+    parser.add_argument("--num_layer", default=1, type=int,
                         help="XXX")
     parser.add_argument("--M", default=10, type=int,
                         help="XXX")
@@ -88,7 +88,7 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=1, type=float,
+    parser.add_argument('--prior_var', default=0.1, type=float,
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
@@ -100,7 +100,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=False)) # default configuration
+    config = vars(get_args(debug=True)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
@@ -118,8 +118,8 @@ def main():
     """Standardization"""
     test_len = 500
     if config["standardize"]:
-        mean_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].mean(axis=0) # train mean
-        std_ = df.iloc[:-(test_len + config["timesteps"] + config["future"])].std(axis=0) # train std
+        mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
+        std_ = df.iloc[:-test_len].std(axis=0) # train std
         df = (df - mean_) / std_
     df.describe()
     df.head()
@@ -128,8 +128,8 @@ def main():
     config["p"] = df.shape[1]
     #%%
     """train, test split"""
-    train = df.iloc[:-(test_len + config["timesteps"] + config["future"])]
-    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
+    train = df.iloc[:-test_len]
+    test = df.iloc[-(test_len + config["timesteps"] + 1):]
     
     train.to_csv('./data/train.csv')
     test.to_csv('./data/test.csv')
@@ -194,46 +194,53 @@ def main():
     samples = model.sampling(test_context, config["MC"])
     #%%
     if config["standardize"]:
-        test_target = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+        test_target_ = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
             ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
         est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
         samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
     #%%
+    if not os.path.exists('./assets/{}'.format(config["model"])):
+        os.makedirs('./assets/{}'.format(config["model"]))
+    if not os.path.exists('./assets/out/{}'.format(config["model"])):
+        os.makedirs('./assets/out/{}'.format(config["model"]))
+    #%%
     """Vrate and Hit"""
-    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    wandb.run.summary['test_data'] = wandb.Table(
-        data=pd.DataFrame(
+    test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    df = pd.DataFrame(
         test_target_.numpy(),
         columns=colnames
-    ))
+    )
+    df.to_csv(f'./assets/out/{config["model"]}/test_data.csv')
+    wandb.run.summary['test_data'] = wandb.Table(
+        data=df)
     
     for i, a in enumerate(alphas):
         vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
         for j, name in enumerate(colnames):
-            print('Vrate([{}], alpha={}): {:.2f}'.format(name, a, vrate[j]), 
-                  ', Hit([{}], alpha={}): {:.2f}'.format(name, a, (a - vrate[j]).abs()))
+            print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
+                  ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
             wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
             wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
-
-        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
-            data=pd.DataFrame(
+        df = pd.DataFrame(
             est_quantiles[i].numpy(),
             columns=colnames     
-        ))
+        )
+        df.to_csv(f'./assets/out/{config["model"]}/VaR(alpha={a}).csv')
+        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
+            data=df)
     #%%
     """Expected Shortfall"""
     for i, a in enumerate(alphas):
         residual = samples - est_quantiles[i][:, None, :]
         ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
-        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
-            data=pd.DataFrame(
+        df = pd.DataFrame(
             ES.numpy(),
             columns=colnames
-        ))
+        )
+        df.to_csv(f'./assets/out/{config["model"]}/ES(alpha={a}).csv')
+        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
+            data=df)
     #%%
-    if not os.path.exists('./assets/{}'.format(config["model"])):
-        os.makedirs('./assets/{}'.format(config["model"]))
-        
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
     fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
@@ -251,6 +258,109 @@ def main():
     # plt.show()
     plt.close()
     wandb.log({f'Estimations All': wandb.Image(fig)})
+    #%%
+    # tau = torch.linspace(0.01, 0.99, config["K"]).unsqueeze(0).to(device)
+    # vrate = [np.zeros((config["p"], )) for _ in range(len(alphas))]
+    # for t in range(len(test_context)):
+        
+    #     logs = {
+    #         'loss': 0,
+    #         'quantile': 0,
+    #         'KL': 0,
+    #         'active': 0,
+    #     }
+        
+    #     """Online Testing"""
+    #     context = test_context[[t], ...].repeat(100, 1, 1).to(device)
+    #     target = test_target[[t], ...].to(device)
+        
+    #     alphas = [0.025, 0.05]
+    #     est_quantiles, Qs = model.est_quantile(context, alphas, config["MC"] // 100, disable=True)
+    #     # samples = model.sampling(context, config["MC"] // 100)
+        
+    #     if config["standardize"]:
+    #         target = target * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+    #         est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
+    #         # samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+        
+    #     target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    #     for i, a in enumerate(alphas):
+    #         vrate[i] += (target_ < est_quantiles[i].mean(dim=0)).to(torch.float32).mean(dim=0).numpy()
+    #     # samples = samples.reshape(-1, config["p"])
+    #     # for i, a in enumerate(alphas):
+    #     #     residual = samples - est_quantiles[i].mean(dim=0)
+    #     #     ES = samples.mean(dim=0) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=0) / a
+        
+    #     """Online Learning"""
+    #     context = test_context[[t], ...].repeat(config["batch_size"], 1, 1).to(device)
+    #     target = test_target[[t], ...].repeat(config["batch_size"], 1, 1).to(device)
+        
+    #     for e in range(config["epochs"]):
+    #         optimizer.zero_grad()
+                
+    #         prior, posterior, params = model(context, target)
+            
+    #         j = 0 # coin
+    #         quantile_sum = 0
+    #         for j in range(target.size(-1)):
+    #             target_ = target[..., j].reshape(-1, 1)
+                
+    #             theta1 = torch.cat([params[i][0][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+    #             theta2 = torch.cat([params[i][1][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+    #             theta3 = torch.cat([params[i][2][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+    #             theta4 = torch.cat([params[i][3][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+                
+    #             theta1 = theta1.reshape(-1, theta1.size(-1))
+    #             theta2 = theta2.reshape(-1, theta2.size(-1))
+    #             theta3 = theta3.reshape(-1, theta3.size(-1))
+    #             theta4 = theta4.reshape(-1, theta4.size(-1))
+                
+    #             Q = model.quantile_function(tau, theta1, theta2, theta3, theta4)
+    #             residual = target_ - Q
+    #             quantile = (residual * (tau - (residual < 0).to(torch.float32))).sum()
+    #             quantile /= (config["K"] * context.size(0))
+    #             quantile_sum += quantile
+    #         logs["quantile"] = logs.get("quantile") + quantile_sum
+            
+    #         """KL-divergence"""
+    #         prior_mean = torch.cat([torch.cat(prior.mean[i], dim=0) for i in range(len(prior.mean))], dim=0)
+    #         prior_logvar = torch.cat([torch.cat(prior.logvar[i], dim=0) for i in range(len(prior.logvar))], dim=0)
+    #         posterior_mean = torch.cat([torch.cat(posterior.mean[i], dim=0) for i in range(len(posterior.mean))], dim=0)
+    #         posterior_logvar = torch.cat([torch.cat(posterior.logvar[i], dim=0) for i in range(len(posterior.logvar))], dim=0)
+            
+    #         KL = ((posterior_mean - prior_mean).pow(2) / prior_logvar.exp()).sum(dim=1)
+    #         KL += (prior_logvar - posterior_logvar).sum(dim=1)
+    #         KL += (posterior_logvar.exp() / prior_logvar.exp()).sum(dim=1)
+    #         KL -= config["d_latent"]
+    #         KL *= 0.5
+    #         KL = KL.sum() / context.size(0)
+    #         logs["KL"] = logs.get("KL") + KL
+            
+    #         loss = quantile_sum + config["beta"] * KL
+    #         logs["loss"] = logs.get("loss") + loss
+            
+    #         active = (posterior_logvar.exp().mean(dim=0) < 0.1).to(torch.float32).mean()
+    #         logs["active"] = logs.get("active") + active
+            
+    #         # """learning rate scheduling"""
+    #         # if t == 0:
+    #         #     M = np.random.geometric(p=1/np.log(len(train) + 10))
+    #         # else:
+    #         #     M_tmp = np.random.geometric(p=1/np.log(len(train) + 10))
+    #         #     if M < M_tmp: M = M_tmp
+
+    #         loss.backward()
+    #         optimizer.step()
+        
+    #     print_input = "[T {:04d}]".format(t + 1)
+    #     print_input += ''.join([', {}: {:.4f}'.format(x, y.item()) for x, y in logs.items()])
+    #     print(print_input)
+        
+    #     for i in range(len(alphas)):
+    #         print(vrate[i] / (t+1))
+    # #%%
+    # vrate[0] / len(test_context)
+    # vrate[1] / len(test_context)
     #%%
     # for i, a in enumerate(alphas):
     #     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
