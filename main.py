@@ -35,7 +35,7 @@ except:
     import wandb
 
 run = wandb.init(
-    project="ProTran", 
+    project="DDM", 
     entity="anseunghwan",
     # tags=[''],
 )

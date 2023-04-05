@@ -1,4 +1,4 @@
-project: ProTran
+project: DDM
 program: main.py
 method: grid
 # metric:
