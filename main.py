@@ -221,8 +221,8 @@ def main():
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/out/{}'.format(config["model"])):
-        os.makedirs('./assets/out/{}'.format(config["model"]))
+    if not os.path.exists('./assets/{}out/'.format(config["model"])):
+        os.makedirs('./assets/{}out/'.format(config["model"]))
     #%%
     """Vrate and Hit"""
     test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
@@ -230,7 +230,7 @@ def main():
         test_target_.numpy(),
         columns=colnames
     )
-    df.to_csv(f'./assets/out/{config["model"]}/test_data.csv')
+    df.to_csv(f'./assets/{config["model"]}/out/test_data.csv')
     wandb.run.summary['test_data'] = wandb.Table(data=df)
     
     for i, a in enumerate(alphas):
@@ -244,7 +244,7 @@ def main():
             est_quantiles[i].numpy(),
             columns=colnames     
         )
-        df.to_csv(f'./assets/out/{config["model"]}/VaR(alpha={a}).csv')
+        df.to_csv(f'./assets/{config["model"]}/out/VaR(alpha={a}).csv')
         wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
     #%%
     """Expected Shortfall"""
@@ -255,7 +255,7 @@ def main():
             ES.numpy(),
             columns=colnames
         )
-        df.to_csv(f'./assets/out/{config["model"]}/ES(alpha={a}).csv')
+        df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
         wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
     #%%
     """Visualize"""
