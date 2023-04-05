@@ -203,8 +203,8 @@ def main():
         wandb.log({x : y for x, y in logs.items()})
     #%%
     """Quantile Estimation"""
-    alphas = [0.025, 0.05]
-    # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    # alphas = [0.025, 0.05]
+    alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975]
     if config["model"] == "TLAE":
         est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
     else:
@@ -221,8 +221,8 @@ def main():
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}out/'.format(config["model"])):
-        os.makedirs('./assets/{}out/'.format(config["model"]))
+    if not os.path.exists('./assets/{}/out/'.format(config["model"])):
+        os.makedirs('./assets/{}/out/'.format(config["model"]))
     #%%
     """Vrate and Hit"""
     test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
