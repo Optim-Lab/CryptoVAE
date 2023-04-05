@@ -6,6 +6,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
 import tqdm
+import yaml
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
@@ -55,7 +56,7 @@ def get_args(debug):
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
     parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, KUMA')
+                        help='Fitting model options: LSQF, GLD, KUMA, TLAE')
     parser.add_argument('--standardize', action='store_false')
     
     parser.add_argument("--d_model", default=8, type=int,
@@ -92,15 +93,29 @@ def get_args(debug):
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
-  
+    
     if debug:
         return parser.parse_args(args=[])
     else:    
         return parser.parse_args()
 #%%
+def load_config(config):
+    config_path = f'./configs/{config["model"]}.yaml'
+    with open(config_path, 'r') as config_file:
+        args = yaml.load(config_file, Loader=yaml.FullLoader)
+    for key in config.keys():
+        if key in args.keys():
+            config[key] = args[key]
+    return config
+#%%
 def main():
     #%%
     config = vars(get_args(debug=False)) # default configuration
+    
+    """load config"""
+    if os.path.isfile(f'./configs/{config["model"]}.yaml'):
+        config = load_config(config)
+    
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
@@ -131,9 +146,6 @@ def main():
     train = df.iloc[:-test_len]
     test = df.iloc[-(test_len + config["timesteps"] + 1):]
     
-    train.to_csv('./data/train.csv')
-    test.to_csv('./data/test.csv')
-    
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
             
@@ -158,6 +170,7 @@ def main():
     assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
     assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
+    """model"""
     model_module = importlib.import_module('modules.{}'.format(config["model"]))
     importlib.reload(model_module)
     model = getattr(model_module, config["model"])(config, device).to(device)
@@ -175,6 +188,7 @@ def main():
     print("Number of Parameters:", num_params)
     wandb.log({'Number of Parameters': num_params})
     #%%
+    """Training"""
     train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
     importlib.reload(train_module)
     
@@ -188,21 +202,27 @@ def main():
         print(print_input)
         wandb.log({x : y for x, y in logs.items()})
     #%%
+    """Quantile Estimation"""
     alphas = [0.025, 0.05]
     # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    est_quantiles, Qs = model.est_quantile(test_context, alphas, config["MC"])
-    samples = model.sampling(test_context, config["MC"])
+    if config["model"] == "TLAE":
+        est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
+    else:
+        est_quantiles, Qs = model.est_quantile(test_context, alphas, config["MC"])
+        samples = model.sampling(test_context, config["MC"])
     #%%
     if config["standardize"]:
         test_target_ = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
             ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
         est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
         samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+    else:
+        test_target_ = test_target.clone()
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/out/{}'.format(config["model"])):
-        os.makedirs('./assets/out/{}'.format(config["model"]))
+    if not os.path.exists('./assets/{}out/'.format(config["model"])):
+        os.makedirs('./assets/{}out/'.format(config["model"]))
     #%%
     """Vrate and Hit"""
     test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
@@ -210,9 +230,8 @@ def main():
         test_target_.numpy(),
         columns=colnames
     )
-    df.to_csv(f'./assets/out/{config["model"]}/test_data.csv')
-    wandb.run.summary['test_data'] = wandb.Table(
-        data=df)
+    df.to_csv(f'./assets/{config["model"]}/out/test_data.csv')
+    wandb.run.summary['test_data'] = wandb.Table(data=df)
     
     for i, a in enumerate(alphas):
         vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
@@ -225,9 +244,8 @@ def main():
             est_quantiles[i].numpy(),
             columns=colnames     
         )
-        df.to_csv(f'./assets/out/{config["model"]}/VaR(alpha={a}).csv')
-        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(
-            data=df)
+        df.to_csv(f'./assets/{config["model"]}/out/VaR(alpha={a}).csv')
+        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
     #%%
     """Expected Shortfall"""
     for i, a in enumerate(alphas):
@@ -237,10 +255,10 @@ def main():
             ES.numpy(),
             columns=colnames
         )
-        df.to_csv(f'./assets/out/{config["model"]}/ES(alpha={a}).csv')
-        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(
-            data=df)
+        df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
+        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
     #%%
+    """Visualize"""
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
     fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
@@ -258,6 +276,10 @@ def main():
     # plt.show()
     plt.close()
     wandb.log({f'Estimations All': wandb.Image(fig)})
+    #%%
+    """data save"""
+    train.to_csv(f'./assets/{config["model"]}/train.csv')
+    test.to_csv(f'./assets/{config["model"]}/test.csv')
     #%%
     """model save"""
     torch.save(model.state_dict(), './assets/{}.pth'.format(config["model"]))
