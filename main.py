@@ -278,8 +278,8 @@ def main():
     wandb.log({f'Estimations All': wandb.Image(fig)})
     #%%
     """data save"""
-    train.to_csv(f'./{config["model"]}/train.csv')
-    test.to_csv(f'./{config["model"]}/test.csv')
+    train.to_csv(f'./assets/{config["model"]}/train.csv')
+    test.to_csv(f'./assets/{config["model"]}/test.csv')
     #%%
     """model save"""
     torch.save(model.state_dict(), './assets/{}.pth'.format(config["model"]))
