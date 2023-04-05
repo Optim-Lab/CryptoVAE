@@ -26,9 +26,9 @@ class TLAE(nn.Module):
         """encoder"""
         self.encoder = nn.Sequential(
             nn.Linear(config["p"], config["d_latent"]),
-            nn.ReLU(),
+            nn.ELU(),
             nn.Linear(config["d_latent"], config["d_latent"]),
-            nn.ReLU(),
+            nn.ELU(),
             nn.Linear(config["d_latent"], config["d_latent"])).to(device)
         
         """temporal structure"""
@@ -37,9 +37,9 @@ class TLAE(nn.Module):
         """decoder"""
         self.decoder = nn.Sequential(
             nn.Linear(config["d_latent"], config["d_latent"]),
-            nn.ReLU(),
+            nn.ELU(),
             nn.Linear(config["d_latent"], config["d_latent"]),
-            nn.ReLU(),
+            nn.ELU(),
             nn.Linear(config["d_latent"], config["p"])).to(device)
     
     def get_prior(self, context_batch, deterministic=False):
