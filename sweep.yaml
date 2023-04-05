@@ -5,15 +5,15 @@ method: grid
 #   goal: minimize
 #   name: loss
 parameters:
-  seed:
-    values: [1]
   model:
-    values: ['LSQF', 'GLD', 'KUMA']
-  d_model:
-    values: [8, 128]
-  d_latent:
-    values: [4, 16]
-  prior_var:
-    values: [0.1, 1]
-  beta:
-    values: [0.5, 1, 2]
+    values: ['LSQF', 'GLD', 'KUMA', 'TLAE']
+  # seed:
+  #   values: [1]
+  # d_model:
+  #   values: [8, 128]
+  # d_latent:
+  #   values: [4, 16]
+  # prior_var:
+  #   values: [0.1, 1]
+  # beta:
+  #   values: [0.5, 1, 2]
