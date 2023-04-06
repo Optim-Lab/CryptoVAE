@@ -282,11 +282,11 @@ def main():
     test.to_csv(f'./assets/{config["model"]}/test.csv')
     #%%
     """model save"""
-    torch.save(model.state_dict(), './assets/{}.pth'.format(config["model"]))
-    artifact = wandb.Artifact('{}'.format(config["model"]), 
+    torch.save(model.state_dict(), './assets/coin_{}.pth'.format(config["model"]))
+    artifact = wandb.Artifact('coin_{}'.format(config["model"]), 
                             type='model',
                             metadata=config) # description=""
-    artifact.add_file(f'./assets/{config["model"]}.pth')
+    artifact.add_file(f'./assets/coin_{config["model"]}.pth')
     artifact.add_file('./main.py')
     artifact.add_file(f'./modules/{config["model"]}.py')
     artifact.add_file(f'./modules/{config["model"]}_train.py')
