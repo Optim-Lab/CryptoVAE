@@ -69,6 +69,10 @@ class TLAE(nn.Module):
         return xhat, future_mu, future_z
     
     def est_quantile(self, test_context, alphas, MC, disable=False):
+        torch.manual_seed(self.config["seed"])
+        if self.config["cuda"]:
+            torch.cuda.manual_seed(self.config["seed"])
+            
         samples = []
         for _ in tqdm.tqdm(range(MC), desc=f"Sampling...", disable=disable):
             with torch.no_grad():

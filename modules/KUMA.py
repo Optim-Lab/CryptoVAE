@@ -104,6 +104,10 @@ class KUMA(nn.Module):
                 params)
     
     def est_quantile(self, test_context, alphas, MC, disable=False):
+        torch.manual_seed(self.config["seed"])
+        if self.config["cuda"]:
+            torch.cuda.manual_seed(self.config["seed"])
+            
         est_quantiles = []
         for a in alphas:
             Qs = []
@@ -126,6 +130,10 @@ class KUMA(nn.Module):
         return est_quantiles, Qs
     
     def sampling(self, test_context, MC, disable=False):
+        torch.manual_seed(self.config["seed"])
+        if self.config["cuda"]:
+            torch.cuda.manual_seed(self.config["seed"])
+            
         samples = []
         for _ in tqdm.tqdm(range(MC), desc=f"Data sampling...", disable=disable):
             with torch.no_grad():
