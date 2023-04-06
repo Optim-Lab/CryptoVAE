@@ -18,6 +18,7 @@ def train_function(context, target, model, iterations, config, optimizer, device
         'active': 0,
     }
     for i in range(iterations):
+        # context, target = train_context, train_target
         idx = np.random.choice(
             range(len(context)), config["batch_size"], replace=False)
         context_batch = context[idx, :].to(device)
