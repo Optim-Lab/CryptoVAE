@@ -139,14 +139,15 @@ class LSQF(nn.Module):
                     _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                     params = self.get_spline(prior_z)
                 
-                gamma = torch.cat(params[-1][0], dim=0)
-                beta = torch.cat(params[-1][1], dim=0)
-                delta = torch.cat(params[-1][2], dim=0)
+                gamma = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
+                beta = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
+                delta = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
                 
                 alpha = (torch.ones(gamma.shape) * a).to(self.device)
                 
-                Qs_ = self.quantile_function(alpha, alpha, beta, gamma)
-                Qs.append(torch.cat(torch.split(Qs_, len(test_context), dim=0), dim=1)[:, None, :])
+                Qs_ = self.quantile_function(alpha, gamma, beta, delta)
+                Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
+                Qs.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
             Qs = torch.cat(Qs, dim=1).mean(dim=1)
             est_quantiles.append(Qs.cpu())
         return est_quantiles
@@ -162,14 +163,15 @@ class LSQF(nn.Module):
                 _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                 params = self.get_spline(prior_z)
             
-            gamma = torch.cat(params[-1][0], dim=0)
-            beta = torch.cat(params[-1][1], dim=0)
-            delta = torch.cat(params[-1][2], dim=0)
+            gamma = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
+            beta = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
+            delta = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
             
             alpha = torch.rand(gamma.shape).to(self.device)
             
-            Qs_ = self.quantile_function(alpha, alpha, beta, gamma)
-            samples.append(torch.cat(torch.split(Qs_, len(test_context), dim=0), dim=1)[:, None, :])
+            Qs_ = self.quantile_function(alpha, gamma, beta, delta)
+            Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
+            samples.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
         samples = torch.cat(samples, dim=1)
         return samples.cpu()
 #%%
