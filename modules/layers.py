@@ -195,6 +195,8 @@ class PosteriorModule(nn.Module):
             w_hat = self.prior.layer_norm2(w_bar + self.prior.mha2(w_bar, h_C, h_C))
             
             w_hat_k = torch.cat([w_hat, k[:, [i], :]], dim=2)
+            # k = self.mha(h_T[:, i:i+1, :], h_T[:, :i+1, :], h_T[:, :i+1, :])
+            # w_hat_k = torch.cat([w_hat, k], dim=2)
 
             mean, logvar = torch.split(self.fc1(w_hat_k), self.config["d_latent"], dim=2)
             epsilon = torch.randn(mean.shape).to(self.device)
