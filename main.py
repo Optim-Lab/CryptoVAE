@@ -136,7 +136,7 @@ def main():
     #%%
     """train, test split"""
     train = df.iloc[:-test_len]
-    test = df.iloc[-(test_len + config["timesteps"] + 1):]
+    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
     
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
@@ -219,10 +219,10 @@ def main():
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}/out/'.format(config["model"])):
-        os.makedirs('./assets/{}/out/'.format(config["model"]))
-    if not os.path.exists('./assets/{}/plots/'.format(config["model"])):
-        os.makedirs('./assets/{}/plots/'.format(config["model"]))
+    if not os.path.exists('./assets/{}/out(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/out(future={})/'.format(config["model"], config["future"]))
+    if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
     #%%
     """Vrate and Hit"""
     for i, a in enumerate(alphas):
@@ -248,7 +248,7 @@ def main():
         plt.ylabel('return', fontsize=12)
         plt.xlabel('days', fontsize=12)
         plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/plots/{colnames[j]}.png')
+        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
         # plt.show()
         plt.close()
         wandb.log({f'Quantile (colnames[j])': wandb.Image(fig)})
@@ -266,7 +266,7 @@ def main():
         plt.ylabel('return', fontsize=12)
         plt.xlabel('days', fontsize=12)
         plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/plots/full_{colnames[j]}.png')
+        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
         # plt.show()
         plt.close()
         wandb.log({f'Full Quantile (colnames[j])': wandb.Image(fig)})
@@ -276,11 +276,11 @@ def main():
     test.to_csv(f'./assets/{config["model"]}/{config["data"]}_test.csv')
     #%%
     """model save"""
-    torch.save(model.state_dict(), './assets/{}_{}.pth'.format(config["data"], config["model"]))
-    artifact = wandb.Artifact('{}_{}'.format(config["data"], config["model"]), 
+    torch.save(model.state_dict(), f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
+    artifact = wandb.Artifact(f'{config["data"]}_{config["model"]}_{config["future"]}', 
                             type='model',
                             metadata=config) # description=""
-    artifact.add_file(f'./assets/{config["data"]}_{config["model"]}.pth')
+    artifact.add_file(f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
     artifact.add_file('./main.py')
     artifact.add_file(f'./modules/{config["model"]}.py')
     artifact.add_file(f'./modules/{config["model"]}_train.py')
