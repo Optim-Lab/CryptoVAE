@@ -112,7 +112,7 @@ class GLD(nn.Module):
         torch.manual_seed(self.config["seed"])
         if self.config["cuda"]:
             torch.cuda.manual_seed(self.config["seed"])
-            
+        
         est_quantiles = []
         for a in alphas:
             Qs = []
@@ -128,17 +128,17 @@ class GLD(nn.Module):
                 
                 alpha = (torch.ones(theta1.shape) * a).to(self.device)
                 
-                Qs.append(self.quantile_function(
-                    alpha, theta1, theta2, theta3, theta4).reshape(test_context.size(0), self.config["p"])[:, None, :])
-            Qs = torch.cat(Qs, dim=1)
-            est_quantiles.append(Qs.mean(dim=1).cpu())
-        return est_quantiles, Qs
+                Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
+                Qs.append(torch.cat(torch.split(Qs_, len(test_context), dim=0), dim=1)[:, None, :])
+            Qs = torch.cat(Qs, dim=1).mean(dim=1)
+            est_quantiles.append(Qs.cpu())
+        return est_quantiles
     
     def sampling(self, test_context, MC, disable=False):
         torch.manual_seed(self.config["seed"])
         if self.config["cuda"]:
             torch.cuda.manual_seed(self.config["seed"])
-            
+        
         samples = []
         for _ in tqdm.tqdm(range(MC), desc=f"Data sampling...", disable=disable):
             with torch.no_grad():
@@ -152,8 +152,8 @@ class GLD(nn.Module):
             
             alpha = torch.rand(theta1.shape).to(self.device)
             
-            samples.append(self.quantile_function(
-                alpha, theta1, theta2, theta3, theta4).reshape(test_context.size(0), self.config["p"])[:, None, :])
+            Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
+            samples.append(torch.cat(torch.split(Qs_, len(test_context), dim=0), dim=1)[:, None, :])
         samples = torch.cat(samples, dim=1)
         return samples.cpu()
 #%%
