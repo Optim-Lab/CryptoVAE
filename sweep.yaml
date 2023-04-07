@@ -6,7 +6,7 @@ method: grid
 #   name: loss
 parameters:
   model:
-    values: ['ExpLog']
+    values: ['LSQF', 'GLD', 'ExpLog']
   future:
     values: [1, 5]
   # seed:

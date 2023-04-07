@@ -3,6 +3,6 @@ model: 'GLD'
 d_latent: 16
 d_model: 8
 num_layer: 1
-prior_var: 0.1
-beta: 0.5
+prior_var: 1
+beta: 1
 epochs: 200
