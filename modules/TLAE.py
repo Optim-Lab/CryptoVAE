@@ -40,7 +40,8 @@ class TLAE(nn.Module):
             nn.ELU(),
             nn.Linear(config["d_latent"], config["d_latent"]),
             nn.ELU(),
-            nn.Linear(config["d_latent"], config["p"])).to(device)
+            nn.Linear(config["d_latent"], config["p"]),
+            nn.Softplus()).to(device)
     
     def get_prior(self, context_batch, deterministic=False):
         z = self.encoder(context_batch)
