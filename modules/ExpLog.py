@@ -17,9 +17,9 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
-class Dagum(nn.Module):
+class ExpLog(nn.Module):
     def __init__(self, config, device):
-        super(Dagum, self).__init__()
+        super(ExpLog, self).__init__()
         self.config = config
         self.M = config["M"]
         self.device = device
@@ -35,7 +35,7 @@ class Dagum(nn.Module):
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
         self.spline = nn.ModuleList(
-            [nn.Linear(config["d_latent"], 4 * config["p"])
+            [nn.Linear(config["d_latent"], 2 * config["p"])
              for _ in range(config["timesteps"] + config["future"])])
         # self.spline = nn.ModuleList(
         #     [nn.Sequential(
@@ -45,12 +45,10 @@ class Dagum(nn.Module):
         #     for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
-        h = torch.split(h, 4, dim=1)
-        theta1 = [nn.Softplus()(h_[:, [0]]) for h_ in h]
+        h = torch.split(h, 2, dim=1)
+        theta1 = [nn.Sigmoid()(h_[:, [0]]) for h_ in h]
         theta2 = [nn.Softplus()(h_[:, [1]]) for h_ in h]
-        theta3 = [nn.Softplus()(h_[:, [2]]) for h_ in h]
-        theta4 = [nn.Softplus()(h_[:, [3]]) for h_ in h] # location
-        return theta1, theta2, theta3, theta4
+        return theta1, theta2
     
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
@@ -62,8 +60,8 @@ class Dagum(nn.Module):
         params = list(map(lambda x: self.quantile_parameter(x), spline_feature))
         return params
     
-    def quantile_function(self, tau, theta1, theta2, theta3, theta4):
-        Q = theta4 + theta3 * (tau ** (-1/theta1) - 1) ** (-1/theta2)
+    def quantile_function(self, tau, theta1, theta2):
+        Q = ((1 - theta1) / (1 - theta1 ** (1 - tau))).log() / theta2
         return Q
     
     def forward(self, context_batch, target_batch):
@@ -115,12 +113,10 @@ class Dagum(nn.Module):
                 
                 theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
                 theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
-                theta3 = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
-                theta4 = torch.cat([torch.cat(params[self.config["timesteps"]+t][3], dim=1) for t in range(self.config["future"])])
                 
                 alpha = (torch.ones(theta1.shape) * a).to(self.device)
                 
-                Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
+                Qs_ = self.quantile_function(alpha, theta1, theta2)
                 Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
                 Qs.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
             Qs = torch.cat(Qs, dim=1).mean(dim=1)
@@ -140,12 +136,10 @@ class Dagum(nn.Module):
             
             theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
             theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
-            theta3 = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
-            theta4 = torch.cat([torch.cat(params[self.config["timesteps"]+t][3], dim=1) for t in range(self.config["future"])])
             
             alpha = torch.rand(theta1.shape).to(self.device)
             
-            Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
+            Qs_ = self.quantile_function(alpha, theta1, theta2)
             Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
             samples.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
         samples = torch.cat(samples, dim=1)
