@@ -6,7 +6,6 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
 import tqdm
-import yaml
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 
@@ -22,7 +21,7 @@ sys.path.append('./modules')
 import importlib
 layers = importlib.import_module('modules.layers')
 importlib.reload(layers)
-from modules.utils import set_random_seed
+from modules.utils import set_random_seed, load_config
 #%%
 import sys
 import subprocess
@@ -56,8 +55,10 @@ def get_args(debug):
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
     parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, KUMA, TLAE')
-    parser.add_argument('--standardize', action='store_false')
+                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
+    parser.add_argument('--data', type=str, default='crypto', 
+                        help='Fitting model options: crypto')
+    # parser.add_argument('--standardize', action='store_false')
     
     parser.add_argument("--d_model", default=8, type=int,
                         help="XXX")
@@ -65,7 +66,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
-    parser.add_argument("--future", default=1, type=int,
+    parser.add_argument("--future", default=5, type=int,
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
@@ -99,15 +100,6 @@ def get_args(debug):
     else:    
         return parser.parse_args()
 #%%
-def load_config(config):
-    config_path = f'./configs/{config["model"]}.yaml'
-    with open(config_path, 'r') as config_file:
-        args = yaml.load(config_file, Loader=yaml.FullLoader)
-    for key in config.keys():
-        if key in args.keys():
-            config[key] = args[key]
-    return config
-#%%
 def main():
     #%%
     config = vars(get_args(debug=False)) # default configuration
@@ -117,7 +109,7 @@ def main():
         config = load_config(config)
     
     config["cuda"] = torch.cuda.is_available()
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device('cuda:0') if config["cuda"] else torch.device('cpu')
     wandb.config.update(config)
 
     set_random_seed(config["seed"])
@@ -126,25 +118,25 @@ def main():
         torch.cuda.manual_seed(config["seed"])
     #%%
     df = pd.read_csv(
-        './data/df_upbit_top8_krw_181116.csv',
+        './data/df_scaled_crypto_indices_20180123.csv',
         index_col=0
-    )[['KRW-BTC', 'KRW-ETH', 'KRW-ADA', 'KRW-TRX', 'KRW-ETC']]
+    )
+    # [['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-ADA', 'KRW-ETC']]
     
-    """Standardization"""
     test_len = 500
-    if config["standardize"]:
-        mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
-        std_ = df.iloc[:-test_len].std(axis=0) # train std
-        df = (df - mean_) / std_
-    df.describe()
-    df.head()
+    # """Standardization"""
+    # if config["standardize"]:
+    #     mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
+    #     std_ = df.iloc[:-test_len].std(axis=0) # train std
+    #     df = (df - mean_) / std_
+    print(df.describe())
     
     colnames = df.columns
     config["p"] = df.shape[1]
     #%%
     """train, test split"""
     train = df.iloc[:-test_len]
-    test = df.iloc[-(test_len + config["timesteps"] + 1):]
+    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
     
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
@@ -203,90 +195,92 @@ def main():
         wandb.log({x : y for x, y in logs.items()})
     #%%
     """Quantile Estimation"""
-    # alphas = [0.025, 0.05]
-    alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975]
+    alphas = [0.05, 0.1, 0.5, 0.9]
+    # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975]
+    context = torch.cat([train_context, test_context], dim=0)
+    target = torch.cat([train_target, test_target], dim=0)
+    
     if config["model"] == "TLAE":
-        est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
+        est_quantiles, _ = model.est_quantile(test_context, alphas, config["MC"])
+        full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"])
     else:
-        est_quantiles, Qs = model.est_quantile(test_context, alphas, config["MC"])
-        samples = model.sampling(test_context, config["MC"])
+        est_quantiles = model.est_quantile(test_context, alphas, config["MC"])
+        full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
+    
+    test_target = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    target = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
     #%%
-    if config["standardize"]:
-        test_target_ = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-            ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
-        est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
-        samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-    else:
-        test_target_ = test_target.clone()
+    # if config["standardize"]:
+    #     target_ = (target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
+    #         ).reshape(context.size(0), config["timesteps"] + config["future"], config["p"])
+    #     est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
+    # else:
+    #     target_ = target.clone()
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}/out/'.format(config["model"])):
-        os.makedirs('./assets/{}/out/'.format(config["model"]))
+    if not os.path.exists('./assets/{}/out(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/out(future={})/'.format(config["model"], config["future"]))
+    if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
     #%%
     """Vrate and Hit"""
-    test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    df = pd.DataFrame(
-        test_target_.numpy(),
-        columns=colnames
-    )
-    df.to_csv(f'./assets/{config["model"]}/out/test_data.csv')
-    wandb.run.summary['test_data'] = wandb.Table(data=df)
-    
     for i, a in enumerate(alphas):
-        vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
-        for j, name in enumerate(colnames):
-            print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
-                  ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
-            wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
-            wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
-        df = pd.DataFrame(
-            est_quantiles[i].numpy(),
-            columns=colnames     
-        )
-        df.to_csv(f'./assets/{config["model"]}/out/VaR(alpha={a}).csv')
-        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
-    #%%
-    """Expected Shortfall"""
-    for i, a in enumerate(alphas):
-        residual = samples - est_quantiles[i][:, None, :]
-        ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
-        df = pd.DataFrame(
-            ES.numpy(),
-            columns=colnames
-        )
-        df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
-        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
+        vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        hit = (a - vrate).mean().abs()
+        print('Vrate(alpha={}): {:.3f}'.format(a, vrate.mean()), 
+                ', Hit(alpha={}): {:.3f}'.format(a, hit))
+        wandb.log({f'Vrate(alpha={a})': vrate.mean().item()})
+        wandb.log({f'Hit(alpha={a})': hit.item()})
     #%%
     """Visualize"""
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
     
-    fig, axs = plt.subplots(1, 1, sharex=True, figsize=(12, 6))
-    for i, a in enumerate(alphas):
-        for j in range(len(colnames)):
-            plt.plot(test_target_.numpy(),
-                    color='black', linestyle='--')
+    for j in range(len(colnames)):
+        fig = plt.figure(figsize=(12, 6))
+        plt.plot(test_target.numpy()[:, j],
+                color='black', linestyle='--')
+        for i, a in enumerate(alphas):
             plt.plot(est_quantiles[i][:, j].numpy(),
-                    label=colnames[j] + f'(alpha={a})', color=cols[j])
-            # plt.legend(loc='upper right')
-    plt.ylabel('return', fontsize=12)
-    plt.xlabel('days', fontsize=12)
-    plt.tight_layout()
-    plt.savefig(f'./assets/{config["model"]}/all_quantile.png')
-    # plt.show()
-    plt.close()
-    wandb.log({f'Estimations All': wandb.Image(fig)})
+                    label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
+        # plt.legend()
+        plt.title(f'{colnames[j]}', fontsize=14)
+        plt.ylabel('return', fontsize=12)
+        plt.xlabel('days', fontsize=12)
+        plt.tight_layout()
+        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
+        # plt.show()
+        plt.close()
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(fig)})
+    
+    for j in range(len(colnames)):
+        fig = plt.figure(figsize=(12, 6))
+        plt.plot(target.numpy()[:, j],
+                color='black', linestyle='--')
+        for i, a in enumerate(alphas):
+            plt.plot(full_est_quantiles[i][:, j].numpy(),
+                    label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
+        plt.axvline(x=len(context) - len(test_context), color='b', linewidth=2)
+        # plt.legend()
+        plt.title(f'(Full) {colnames[j]}', fontsize=14)
+        plt.ylabel('return', fontsize=12)
+        plt.xlabel('days', fontsize=12)
+        plt.tight_layout()
+        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
+        # plt.show()
+        plt.close()
+        wandb.log({f'Full Quantile ({colnames[j]})': wandb.Image(fig)})
     #%%
     """data save"""
-    train.to_csv(f'./assets/{config["model"]}/train.csv')
-    test.to_csv(f'./assets/{config["model"]}/test.csv')
+    train.to_csv(f'./assets/{config["model"]}/{config["data"]}_train.csv')
+    test.to_csv(f'./assets/{config["model"]}/{config["data"]}_test.csv')
     #%%
     """model save"""
-    torch.save(model.state_dict(), './assets/{}.pth'.format(config["model"]))
-    artifact = wandb.Artifact('{}'.format(config["model"]), 
+    torch.save(model.state_dict(), f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
+    artifact = wandb.Artifact(f'{config["data"]}_{config["model"]}_{config["future"]}', 
                             type='model',
                             metadata=config) # description=""
-    artifact.add_file(f'./assets/{config["model"]}.pth')
+    artifact.add_file(f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
     artifact.add_file('./main.py')
     artifact.add_file(f'./modules/{config["model"]}.py')
     artifact.add_file(f'./modules/{config["model"]}_train.py')

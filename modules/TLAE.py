@@ -40,7 +40,8 @@ class TLAE(nn.Module):
             nn.ELU(),
             nn.Linear(config["d_latent"], config["d_latent"]),
             nn.ELU(),
-            nn.Linear(config["d_latent"], config["p"])).to(device)
+            nn.Linear(config["d_latent"], config["p"]),
+            nn.Softplus()).to(device)
     
     def get_prior(self, context_batch, deterministic=False):
         z = self.encoder(context_batch)
@@ -69,6 +70,10 @@ class TLAE(nn.Module):
         return xhat, future_mu, future_z
     
     def est_quantile(self, test_context, alphas, MC, disable=False):
+        torch.manual_seed(self.config["seed"])
+        if self.config["cuda"]:
+            torch.cuda.manual_seed(self.config["seed"])
+            
         samples = []
         for _ in tqdm.tqdm(range(MC), desc=f"Sampling...", disable=disable):
             with torch.no_grad():

@@ -5,4 +5,3 @@ d_model: 8
 num_layer: 1
 prior_var: 0.1
 beta: 2.0
-standardize: True
