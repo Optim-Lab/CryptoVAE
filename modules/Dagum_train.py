@@ -36,12 +36,14 @@ def train_function(context, target, model, iterations, config, optimizer, device
             theta1 = torch.cat([params[i][0][j][:, None, :] for i in range(len(params))], dim=1) # i = time
             theta2 = torch.cat([params[i][1][j][:, None, :] for i in range(len(params))], dim=1) # i = time
             theta3 = torch.cat([params[i][2][j][:, None, :] for i in range(len(params))], dim=1) # i = time
+            theta4 = torch.cat([params[i][3][j][:, None, :] for i in range(len(params))], dim=1) # i = time
             
             theta1 = theta1.reshape(-1, theta1.size(-1))
             theta2 = theta2.reshape(-1, theta2.size(-1))
             theta3 = theta3.reshape(-1, theta3.size(-1))
+            theta4 = theta4.reshape(-1, theta4.size(-1))
             
-            Q = model.quantile_function(tau, theta1, theta2, theta3)
+            Q = model.quantile_function(tau, theta1, theta2, theta3, theta4)
             residual = target_batch_ - Q
             quantile = (residual * (tau - (residual < 0).to(torch.float32))).sum()
             quantile /= (config["K"] * context_batch.size(0))

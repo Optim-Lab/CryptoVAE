@@ -35,7 +35,7 @@ class Dagum(nn.Module):
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
         self.spline = nn.ModuleList(
-            [nn.Linear(config["d_latent"], 3 * config["p"])
+            [nn.Linear(config["d_latent"], 4 * config["p"])
              for _ in range(config["timesteps"] + config["future"])])
         # self.spline = nn.ModuleList(
         #     [nn.Sequential(
@@ -45,11 +45,12 @@ class Dagum(nn.Module):
         #     for _ in range(config["timesteps"] + config["future"])])
     
     def quantile_parameter(self, h):
-        h = torch.split(h, 3, dim=1)
+        h = torch.split(h, 4, dim=1)
         theta1 = [nn.Softplus()(h_[:, [0]]) for h_ in h]
         theta2 = [nn.Softplus()(h_[:, [1]]) for h_ in h]
         theta3 = [nn.Softplus()(h_[:, [2]]) for h_ in h]
-        return theta1, theta2, theta3
+        theta4 = [nn.Softplus()(h_[:, [3]]) for h_ in h] # location
+        return theta1, theta2, theta3, theta4
     
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
@@ -61,8 +62,8 @@ class Dagum(nn.Module):
         params = list(map(lambda x: self.quantile_parameter(x), spline_feature))
         return params
     
-    def quantile_function(self, tau, theta1, theta2, theta3):
-        Q = theta3 * (tau ** (-1/theta1) - 1) ** (-1/theta2)
+    def quantile_function(self, tau, theta1, theta2, theta3, theta4):
+        Q = theta4 + theta3 * (tau ** (-1/theta1) - 1) ** (-1/theta2)
         return Q
     
     def forward(self, context_batch, target_batch):
@@ -115,6 +116,7 @@ class Dagum(nn.Module):
                 theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
                 theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
                 theta3 = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
+                theta4 = torch.cat([torch.cat(params[self.config["timesteps"]+t][3], dim=1) for t in range(self.config["future"])])
                 
                 alpha = (torch.ones(theta1.shape) * a).to(self.device)
                 
@@ -139,6 +141,7 @@ class Dagum(nn.Module):
             theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
             theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
             theta3 = torch.cat([torch.cat(params[self.config["timesteps"]+t][2], dim=1) for t in range(self.config["future"])])
+            theta4 = torch.cat([torch.cat(params[self.config["timesteps"]+t][3], dim=1) for t in range(self.config["future"])])
             
             alpha = torch.rand(theta1.shape).to(self.device)
             
