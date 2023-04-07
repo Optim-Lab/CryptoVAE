@@ -2,6 +2,7 @@ seed: 1
 model: 'TLAE'
 d_latent: 32
 num_layer: 4
-beta: 0.005
+beta: 0.001
+epochs: 1000
 lr: 0.0001
 standardize: False
