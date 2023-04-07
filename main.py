@@ -55,7 +55,7 @@ def get_args(debug):
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
     parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, TLAE')
+                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     # parser.add_argument('--standardize', action='store_false')
