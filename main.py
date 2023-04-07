@@ -251,7 +251,7 @@ def main():
         plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
         # plt.show()
         plt.close()
-        wandb.log({f'Quantile (colnames[j])': wandb.Image(fig)})
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(fig)})
     
     for j in range(len(colnames)):
         fig = plt.figure(figsize=(12, 6))
@@ -269,7 +269,7 @@ def main():
         plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
         # plt.show()
         plt.close()
-        wandb.log({f'Full Quantile (colnames[j])': wandb.Image(fig)})
+        wandb.log({f'Full Quantile ({colnames[j]})': wandb.Image(fig)})
     #%%
     """data save"""
     train.to_csv(f'./assets/{config["model"]}/{config["data"]}_train.csv')
