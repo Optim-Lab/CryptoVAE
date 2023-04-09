@@ -21,7 +21,8 @@ sys.path.append('./modules')
 import importlib
 layers = importlib.import_module('modules.layers')
 importlib.reload(layers)
-from modules.utils import set_random_seed, load_config
+utils = importlib.import_module('modules.utils')
+importlib.reload(utils)
 #%%
 import sys
 import subprocess
@@ -106,13 +107,13 @@ def main():
     
     """load config"""
     if os.path.isfile(f'./configs/{config["model"]}.yaml'):
-        config = load_config(config)
+        config = utils.load_config(config)
     
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if config["cuda"] else torch.device('cpu')
     wandb.config.update(config)
 
-    set_random_seed(config["seed"])
+    utils.set_random_seed(config["seed"])
     torch.manual_seed(config["seed"])
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
@@ -195,8 +196,7 @@ def main():
         wandb.log({x : y for x, y in logs.items()})
     #%%
     """Quantile Estimation"""
-    alphas = [0.05, 0.1, 0.5, 0.9]
-    # alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975]
+    alphas = [0.1, 0.5, 0.9]
     context = torch.cat([train_context, test_context], dim=0)
     target = torch.cat([train_target, test_target], dim=0)
     
@@ -234,42 +234,9 @@ def main():
         wandb.log({f'Hit(alpha={a})': hit.item()})
     #%%
     """Visualize"""
-    cols = plt.rcParams['axes.prop_cycle'].by_key()['color'] + plt.rcParams['axes.prop_cycle'].by_key()['color']
-    
+    figs = utils.visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, show=False, dark=False)
     for j in range(len(colnames)):
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(test_target.numpy()[:, j],
-                color='black', linestyle='--')
-        for i, a in enumerate(alphas):
-            plt.plot(est_quantiles[i][:, j].numpy(),
-                    label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
-        # plt.legend()
-        plt.title(f'{colnames[j]}', fontsize=14)
-        plt.ylabel('return', fontsize=12)
-        plt.xlabel('days', fontsize=12)
-        plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
-        # plt.show()
-        plt.close()
-        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(fig)})
-    
-    for j in range(len(colnames)):
-        fig = plt.figure(figsize=(12, 6))
-        plt.plot(target.numpy()[:, j],
-                color='black', linestyle='--')
-        for i, a in enumerate(alphas):
-            plt.plot(full_est_quantiles[i][:, j].numpy(),
-                    label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
-        plt.axvline(x=len(context) - len(test_context), color='b', linewidth=2)
-        # plt.legend()
-        plt.title(f'(Full) {colnames[j]}', fontsize=14)
-        plt.ylabel('return', fontsize=12)
-        plt.xlabel('days', fontsize=12)
-        plt.tight_layout()
-        plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
-        # plt.show()
-        plt.close()
-        wandb.log({f'Full Quantile ({colnames[j]})': wandb.Image(fig)})
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     """data save"""
     train.to_csv(f'./assets/{config["model"]}/{config["data"]}_train.csv')
@@ -328,4 +295,39 @@ if __name__ == '__main__':
 # plt.savefig(f'./assets/test.png')
 # # plt.show()
 # plt.close()
+#%%
+# for j in range(len(colnames)):
+#     fig = plt.figure(figsize=(12, 6))
+#     plt.plot(test_target.numpy()[:, j],
+#             color='black', linestyle='--')
+#     for i, a in enumerate(alphas):
+#         plt.plot(est_quantiles[i][:, j].numpy(),
+#                 label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
+#     # plt.legend()
+#     plt.title(f'{colnames[j]}', fontsize=14)
+#     plt.ylabel('return', fontsize=12)
+#     plt.xlabel('days', fontsize=12)
+#     plt.tight_layout()
+#     plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
+#     # plt.show()
+#     plt.close()
+#     wandb.log({f'Quantile ({colnames[j]})': wandb.Image(fig)})
+
+# for j in range(len(colnames)):
+#     fig = plt.figure(figsize=(12, 6))
+#     plt.plot(target.numpy()[:, j],
+#             color='black', linestyle='--')
+#     for i, a in enumerate(alphas):
+#         plt.plot(full_est_quantiles[i][:, j].numpy(),
+#                 label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
+#     plt.axvline(x=len(context) - len(test_context), color='b', linewidth=2)
+#     # plt.legend()
+#     plt.title(f'(Full) {colnames[j]}', fontsize=14)
+#     plt.ylabel('return', fontsize=12)
+#     plt.xlabel('days', fontsize=12)
+#     plt.tight_layout()
+#     plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
+#     # plt.show()
+#     plt.close()
+#     wandb.log({f'Full Quantile ({colnames[j]})': wandb.Image(fig)})
 #%%

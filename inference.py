@@ -68,7 +68,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=True)) # default configuration
+    config = vars(get_args(debug=False)) # default configuration
     
     """model load"""
     artifact = wandb.use_artifact('anseunghwan/DDM/{}_{}_{}:v{}'.format(
