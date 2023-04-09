@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 import matplotlib.pyplot as plt
-plt.switch_backend('agg')
+# plt.switch_backend('agg')
 
 import torch
 from torch import nn
@@ -21,7 +21,8 @@ sys.path.append('./modules')
 import importlib
 layers = importlib.import_module('modules.layers')
 importlib.reload(layers)
-from modules.utils import set_random_seed
+utils = importlib.import_module('modules.utils')
+importlib.reload(utils)
 #%%
 import sys
 import subprocess
@@ -52,9 +53,13 @@ def arg_as_list(s):
 def get_args(debug):
     parser = argparse.ArgumentParser('parameters')
     
-    parser.add_argument('--model', type=str, default='LSQF', 
-                        help='Fitting model options: LSQF, KUMA, GLD, TLAE')
     parser.add_argument("--num", default=0, type=int,
+                        help="XXX")
+    parser.add_argument('--model', type=str, default='GLD', 
+                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
+    parser.add_argument('--data', type=str, default='crypto', 
+                        help='Fitting model options: crypto')
+    parser.add_argument("--future", default=5, type=int,
                         help="XXX")
     if debug:
         return parser.parse_args(args=[])
@@ -66,8 +71,8 @@ def main():
     config = vars(get_args(debug=True)) # default configuration
     
     """model load"""
-    artifact = wandb.use_artifact('anseunghwan/DDM/coin_{}:v{}'.format(
-        config["model"], config["num"]), type='model')
+    artifact = wandb.use_artifact('anseunghwan/DDM/{}_{}_{}:v{}'.format(
+        config["data"], config["model"], config["future"], config["num"]), type='model')
     for key, item in artifact.metadata.items():
         config[key] = item
     model_dir = artifact.download()
@@ -76,31 +81,31 @@ def main():
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     wandb.config.update(config)
 
-    set_random_seed(config["seed"])
+    utils.set_random_seed(config["seed"])
     torch.manual_seed(config["seed"])
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
     #%%
     df = pd.read_csv(
-        './data/df_upbit_top8_krw_181116.csv',
+        './data/df_scaled_crypto_indices_20180123.csv',
         index_col=0
-    )[['KRW-BTC', 'KRW-ETH', 'KRW-ADA', 'KRW-TRX', 'KRW-ETC']]
+    )
+    # [['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-ADA', 'KRW-ETC']]
     
-    """Standardization"""
     test_len = 500
-    if config["standardize"]:
-        mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
-        std_ = df.iloc[:-test_len].std(axis=0) # train std
-        df = (df - mean_) / std_
-    df.describe()
-    df.head()
+    # """Standardization"""
+    # if config["standardize"]:
+    #     mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
+    #     std_ = df.iloc[:-test_len].std(axis=0) # train std
+    #     df = (df - mean_) / std_
+    print(df.describe())
     
     colnames = df.columns
     config["p"] = df.shape[1]
     #%%
     """train, test split"""
     train = df.iloc[:-test_len]
-    test = df.iloc[-(test_len + config["timesteps"] + 1):]
+    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
     
     def stock_data_generator(df, C, tau):
         n = df.shape[0] - C - tau
@@ -143,43 +148,36 @@ def main():
     
     model.eval()
     #%%
-    alphas = [0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.975]
+    """Quantile Estimation"""
+    alphas = [0.1, 0.5, 0.9]
+    context = torch.cat([train_context, test_context], dim=0)
+    target = torch.cat([train_target, test_target], dim=0)
+    
     if config["model"] == "TLAE":
         est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
+        full_est_quantiles, samples = model.est_quantile(context, alphas, config["MC"])
     else:
-        est_quantiles, Qs = model.est_quantile(test_context, alphas, config["MC"])
-        samples = model.sampling(test_context, config["MC"])
-    #%%
-    if config["standardize"]:
-        test_target_ = (test_target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-            ).reshape(test_context.size(0), config["timesteps"] + config["future"], config["p"])
-        est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
-        samples = samples * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-    else:
-        test_target_ = test_target.clone()
+        est_quantiles = model.est_quantile(test_context, alphas, config["MC"])
+        full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
+    
+    test_target = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    target = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}/out/'.format(config["model"])):
-        os.makedirs('./assets/{}/out/'.format(config["model"]))
-    if not os.path.exists('./assets/{}/plots/'.format(config["model"])):
-        os.makedirs('./assets/{}/plots/'.format(config["model"]))
+    if not os.path.exists('./assets/{}/out(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/out(future={})/'.format(config["model"], config["future"]))
+    if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
+        os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
     #%%
-    """CRPS"""
-    #%%
-    """Quantile loss"""
+    """Visualize"""
+    figs = utils.visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, show=False, dark=False)
+    for j in range(len(colnames)):
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     """Vrate and Hit"""
-    test_target_ = test_target_[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    df = pd.DataFrame(
-        test_target_.numpy(),
-        columns=colnames
-    )
-    df.to_csv(f'./assets/{config["model"]}/out/test_data.csv')
-    wandb.run.summary['test_data'] = wandb.Table(data=df)
-    
     for i, a in enumerate(alphas):
-        vrate = (test_target_ < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
         for j, name in enumerate(colnames):
             print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
                   ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
@@ -189,22 +187,34 @@ def main():
             est_quantiles[i].numpy(),
             columns=colnames     
         )
-        df.to_csv(f'./assets/{config["model"]}/out/VaR(alpha={a}).csv')
+        df.to_csv(f'./assets/{config["model"]}/out(future={config["future"]})/VaR(alpha={a}).csv')
         wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
     #%%
-    """Expected Shortfall"""
-    for i, a in enumerate(alphas):
-        residual = samples - est_quantiles[i][:, None, :]
-        ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
-        df = pd.DataFrame(
-            ES.numpy(),
-            columns=colnames
-        )
-        df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
-        wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
+    """CRPS: Proposal model & TLAE"""
+    if config["model"] != "TLAE":
+        samples = model.sampling(test_context, config["MC"])
+    
+    term1 = (samples - test_target[:, None, :]).abs().mean(dim=1)
+    term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
+    CRPS = term1 - term2
+    print('CRPS: {:.3f}'.format(CRPS.mean()))
+    wandb.log({f'CRPS': CRPS.mean().item()})
+    #%%
+    """Quantile loss"""
     #%%
     wandb.run.finish()
 #%%
 if __name__ == '__main__':
     main()
+#%%
+# """Expected Shortfall"""
+# for i, a in enumerate(alphas):
+#     residual = samples - est_quantiles[i][:, None, :]
+#     ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
+#     df = pd.DataFrame(
+#         ES.numpy(),
+#         columns=colnames
+#     )
+#     df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
+#     wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
 #%%
