@@ -28,7 +28,7 @@ def load_config(config):
     return config
 #%%
 def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, show=False, dark=False):
-    cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
@@ -56,7 +56,7 @@ def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, c
             label=colnames[j], color='black', linestyle='--', linewidth=2)
         plt.plot(
             full_est_quantiles[1][:, j].numpy(),
-            label='Median', color=cols[7], linewidth=2)
+            label='Median', color='green', linewidth=2)
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
         plt.legend(loc = 'upper left')    
