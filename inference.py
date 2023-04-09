@@ -155,7 +155,7 @@ def main():
     
     if config["model"] == "TLAE":
         est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
-        full_est_quantiles, samples = model.est_quantile(context, alphas, config["MC"])
+        full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"])
     else:
         est_quantiles = model.est_quantile(test_context, alphas, config["MC"])
         full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
@@ -178,11 +178,15 @@ def main():
     """Vrate and Hit"""
     for i, a in enumerate(alphas):
         vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
-        for j, name in enumerate(colnames):
-            print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
-                  ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
-            wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
-            wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
+        print('Vrate(alpha={}): {:.3f}'.format(a, vrate.mean()), 
+              ', Hit(alpha={}): {:.3f}'.format(a, (a - vrate.mean()).abs()))
+        wandb.log({f'Vrate(alpha={a})': vrate.mean().item()})
+        wandb.log({f'Hit(alpha={a})': (a - vrate.mean()).abs().item()})
+        # for j, name in enumerate(colnames):
+        #     print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
+        #           ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
+        #     wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
+        #     wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
         df = pd.DataFrame(
             est_quantiles[i].numpy(),
             columns=colnames     
