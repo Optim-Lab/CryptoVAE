@@ -55,7 +55,7 @@ class GLD(nn.Module):
         elif self.config["model"] == 'GLD(infinite)':
             # half-infinite support (support maximum is infinite)
             theta3 = [(h_[:, [2]]).exp() for h_ in h]
-            theta4 = [-(h_[:, [3]]).exp() for h_ in h]
+            theta4 = [-nn.Softplus()(h_[:, [3]]) for h_ in h]
         else:
             raise ValueError('Not valid support option for GLD.')
         return theta1, theta2, theta3, theta4
