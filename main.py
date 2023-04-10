@@ -61,9 +61,9 @@ def get_args(debug):
                         help='Fitting model options: crypto')
     # parser.add_argument('--standardize', action='store_false')
     
-    parser.add_argument("--d_model", default=8, type=int,
+    parser.add_argument("--d_latent", default=16, type=int,
                         help="XXX")
-    parser.add_argument("--d_latent", default=4, type=int,
+    parser.add_argument("--d_model", default=8, type=int,
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
@@ -91,7 +91,7 @@ def get_args(debug):
     parser.add_argument('--threshold', default=1e-8, type=float,
                         help='threshold for clipping alpha_tilde')
     
-    parser.add_argument('--prior_var', default=0.1, type=float,
+    parser.add_argument('--prior_var', default=1, type=float,
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')

@@ -61,7 +61,8 @@ class ExpLog(nn.Module):
         return params
     
     def quantile_function(self, tau, theta1, theta2):
-        Q = ((1 - theta1) / (1 - theta1 ** (1 - tau))).log() / theta2
+        Q = ((1 - theta1 + 1e-6).log() - (1 - theta1 ** (1 - tau) + 1e-6).log()) / theta2
+        # Q = ((1 - theta1) / (1 - theta1 ** (1 - tau))).log() / theta2
         return Q
     
     def forward(self, context_batch, target_batch):
