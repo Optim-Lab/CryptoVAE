@@ -55,7 +55,7 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD(finite)', 
+    parser.add_argument('--model', type=str, default='GLD(infinite)', 
                         help='Fitting model options: GLD(finite), GLD(infinite), LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
