@@ -55,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
+    parser.add_argument('--model', type=str, default='GLD(infinite)', 
+                        help='Fitting model options: GLD(finite), GLD(infinite), LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     # parser.add_argument('--standardize', action='store_false')
@@ -67,7 +67,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
-    parser.add_argument("--future", default=5, type=int,
+    parser.add_argument("--future", default=1, type=int, # equals to T - C
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
@@ -164,9 +164,14 @@ def main():
     assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
     """model"""
-    model_module = importlib.import_module('modules.{}'.format(config["model"]))
-    importlib.reload(model_module)
-    model = getattr(model_module, config["model"])(config, device).to(device)
+    try:
+        model_module = importlib.import_module('modules.{}'.format(config["model"]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"])(config, device).to(device)
+    except:
+        model_module = importlib.import_module('modules.{}'.format(config["model"].split('(')[0]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"].split('(')[0])(config, device).to(device)
     
     optimizer = torch.optim.Adam(
         model.parameters(), 
@@ -182,7 +187,10 @@ def main():
     wandb.log({'Number of Parameters': num_params})
     #%%
     """Training"""
-    train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
+    try:
+        train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
+    except:
+        train_module = importlib.import_module('modules.{}_train'.format(config["model"].split('(')[0]))
     importlib.reload(train_module)
     
     iterations = len(train_context) // config["batch_size"] + 1

@@ -48,14 +48,16 @@ class GLD(nn.Module):
         h = torch.split(h, 4, dim=1)
         theta1 = [h_[:, [0]].tanh() for h_ in h]
         theta2 = [nn.Softplus()(h_[:, [1]]) for h_ in h]
-        # half-infinite support (support maximum is infinite)
-        theta3 = [nn.Softplus()(h_[:, [2]]) for h_ in h]
-        theta4 = [-nn.Softplus()(h_[:, [3]]) for h_ in h]
-        
-        # theta2 = [(h_[:, [1]]).exp() for h_ in h]
-        # finite support
-        # theta3 = [(h_[:, [2]]).exp() for h_ in h]
-        # theta4 = [(h_[:, [3]]).exp() for h_ in h]
+        if self.config["model"] == 'GLD(finite)':
+            # finite support
+            theta3 = [(h_[:, [2]]).exp() for h_ in h]
+            theta4 = [(h_[:, [3]]).exp() for h_ in h]
+        elif self.config["model"] == 'GLD(infinite)':
+            # half-infinite support (support maximum is infinite)
+            theta3 = [(h_[:, [2]]).exp() for h_ in h]
+            theta4 = [-nn.Softplus()(h_[:, [3]]) for h_ in h]
+        else:
+            raise ValueError('Not valid support option for GLD.')
         return theta1, theta2, theta3, theta4
     
     def get_prior(self, context_batch):
