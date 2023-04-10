@@ -57,7 +57,7 @@ class GLD(nn.Module):
             theta3 = [(h_[:, [2]]).exp() for h_ in h]
             theta4 = [-(h_[:, [3]]).exp() for h_ in h]
         else:
-            raise ValueError('Not valid support for GPD.')
+            raise ValueError('Not valid support option for GLD.')
         return theta1, theta2, theta3, theta4
     
     def get_prior(self, context_batch):

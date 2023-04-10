@@ -1,5 +1,5 @@
 seed: 1
-model: 'GLD'
+model: 'GLD(infinite)'
 d_latent: 16
 d_model: 8
 num_layer: 1

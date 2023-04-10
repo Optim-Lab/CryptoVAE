@@ -164,9 +164,14 @@ def main():
     assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
     """model"""
-    model_module = importlib.import_module('modules.{}'.format(config["model"]))
-    importlib.reload(model_module)
-    model = getattr(model_module, config["model"])(config, device).to(device)
+    try:
+        model_module = importlib.import_module('modules.{}'.format(config["model"]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"])(config, device).to(device)
+    except:
+        model_module = importlib.import_module('modules.{}'.format(config["model"].split('(')[0]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"].split('(')[0])(config, device).to(device)
     
     optimizer = torch.optim.Adam(
         model.parameters(), 
@@ -182,7 +187,10 @@ def main():
     wandb.log({'Number of Parameters': num_params})
     #%%
     """Training"""
-    train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
+    try:
+        train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
+    except:
+        train_module = importlib.import_module('modules.{}_train'.format(config["model"].split('(')[0]))
     importlib.reload(train_module)
     
     iterations = len(train_context) // config["batch_size"] + 1
