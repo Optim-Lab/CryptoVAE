@@ -55,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD(infinite)', 
-                        help='Fitting model options: GLD(finite), GLD(infinite), LSQF, ExpLog, TLAE')
+    parser.add_argument('--model', type=str, default='GLD_infinite', 
+                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     # parser.add_argument('--standardize', action='store_false')
@@ -169,9 +169,9 @@ def main():
         importlib.reload(model_module)
         model = getattr(model_module, config["model"])(config, device).to(device)
     except:
-        model_module = importlib.import_module('modules.{}'.format(config["model"].split('(')[0]))
+        model_module = importlib.import_module('modules.{}'.format(config["model"].split('_')[0]))
         importlib.reload(model_module)
-        model = getattr(model_module, config["model"].split('(')[0])(config, device).to(device)
+        model = getattr(model_module, config["model"].split('_')[0])(config, device).to(device)
     
     optimizer = torch.optim.Adam(
         model.parameters(), 
@@ -190,7 +190,7 @@ def main():
     try:
         train_module = importlib.import_module('modules.{}_train'.format(config["model"]))
     except:
-        train_module = importlib.import_module('modules.{}_train'.format(config["model"].split('(')[0]))
+        train_module = importlib.import_module('modules.{}_train'.format(config["model"].split('_')[0]))
     importlib.reload(train_module)
     
     iterations = len(train_context) // config["batch_size"] + 1
@@ -257,8 +257,12 @@ def main():
                             metadata=config) # description=""
     artifact.add_file(f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
     artifact.add_file('./main.py')
-    artifact.add_file(f'./modules/{config["model"]}.py')
-    artifact.add_file(f'./modules/{config["model"]}_train.py')
+    try:
+        artifact.add_file(f'./modules/{config["model"]}.py')
+        artifact.add_file(f'./modules/{config["model"]}_train.py')
+    except:
+        artifact.add_file('./modules/{}.py'.format(config["model"].split('_')[0]))
+        artifact.add_file('./modules/{}_train.py'.format(config["model"].split('_')[0]))
     wandb.log_artifact(artifact)
     #%%
     wandb.config.update(config, allow_val_change=True)
