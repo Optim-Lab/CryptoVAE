@@ -55,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
+    parser.add_argument('--model', type=str, default='GLD(finite)', 
+                        help='Fitting model options: GLD(finite), GLD(infinite), LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     # parser.add_argument('--standardize', action='store_false')
@@ -67,7 +67,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
-    parser.add_argument("--future", default=5, type=int,
+    parser.add_argument("--future", default=1, type=int, # equals to T - C
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
