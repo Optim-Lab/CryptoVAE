@@ -175,6 +175,13 @@ def main():
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
+    """Volatility"""
+    width = est_quantiles[-1] - est_quantiles[0]
+    width /= width.max(dim=0).values
+    volatility = width.mean()
+    print('Volatility(width): {:.3f}'.format(volatility.item()))
+    wandb.log({f'Volatility(width)': volatility.item()})
+    #%%
     """Vrate and Hit"""
     for i, a in enumerate(alphas):
         vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
@@ -205,6 +212,17 @@ def main():
     wandb.log({f'CRPS': CRPS.mean().item()})
     #%%
     """Quantile loss"""
+    if config["model"] != "TLAE":
+        tau = torch.linspace(0.01, 0.99, 99)
+        est_quantiles = model.est_quantile(test_context, tau, 1, disable=True)
+    
+        quantile_risk = 0
+        for i, a in enumerate(tau):
+            residual = test_target - est_quantiles[i]
+            quantile_risk += ((a - (residual < 0).to(torch.float32)) * residual).mean()
+        quantile_risk /= len(tau)
+        print('Quantile Risk: {:.3f}'.format(quantile_risk.item()))
+        wandb.log({f'Quantile Risk': quantile_risk.item()})
     #%%
     wandb.run.finish()
 #%%
