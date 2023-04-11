@@ -55,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument("--num", default=0, type=int,
                         help="XXX")
-    parser.add_argument('--model', type=str, default='GLD', 
-                        help='Fitting model options: LSQF, GLD, TLAE, ExpLog')
+    parser.add_argument('--model', type=str, default='GLD_infinite', 
+                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     parser.add_argument("--future", default=5, type=int,
@@ -131,9 +131,14 @@ def main():
     assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
     assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
     #%%
-    model_module = importlib.import_module('modules.{}'.format(config["model"]))
-    importlib.reload(model_module)
-    model = getattr(model_module, config["model"])(config, device).to(device)
+    try:
+        model_module = importlib.import_module('modules.{}'.format(config["model"]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"])(config, device).to(device)
+    except:
+        model_module = importlib.import_module('modules.{}'.format(config["model"].split('_')[0]))
+        importlib.reload(model_module)
+        model = getattr(model_module, config["model"].split('_')[0])(config, device).to(device)
     
     if config["cuda"]:
         model_name = [x for x in os.listdir(model_dir) if x.endswith('pth')][0]
