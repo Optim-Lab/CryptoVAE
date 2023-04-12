@@ -79,10 +79,10 @@ class TLAE(nn.Module):
             with torch.no_grad():
                 xhat, _, _ = self.forward(test_context, deterministic=True)
                 samples.append(xhat[:, self.config["timesteps"]:, :])
-        samples = torch.cat(samples, dim=1)
+        samples = torch.stack(samples)
         
         est_quantiles = []
         for i, a in enumerate(alphas):
-            est_quantiles.append(samples.quantile(q=a, dim=1))
+            est_quantiles.append(samples.quantile(q=a, dim=0))
         return est_quantiles, samples
 #%%

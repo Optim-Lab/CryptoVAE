@@ -119,9 +119,8 @@ class ExpLog(nn.Module):
                 
                 Qs_ = self.quantile_function(alpha, theta1, theta2)
                 Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
-                Qs.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
-            Qs = torch.cat(Qs, dim=1).mean(dim=1)
-            est_quantiles.append(Qs.cpu())
+                Qs.append(Qs_.cpu())
+            est_quantiles.append(torch.mean(torch.stack(Qs), dim=0))
         return est_quantiles
     
     def sampling(self, test_context, MC, disable=False):
