@@ -67,7 +67,7 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--timesteps", default=20, type=int, # equals to C
                         help="XXX")
-    parser.add_argument("--future", default=1, type=int, # equals to T - C
+    parser.add_argument("--future", default=5, type=int, # equals to T - C
                         help="XXX")
     parser.add_argument("--num_heads", default=1, type=int,
                         help="XXX")
@@ -119,17 +119,11 @@ def main():
         torch.cuda.manual_seed(config["seed"])
     #%%
     df = pd.read_csv(
-        './data/df_scaled_crypto_indices_20180123.csv',
+        f'./data/{config["data"]}.csv',
         index_col=0
     )
-    # [['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-ADA', 'KRW-ETC']]
     
     test_len = 500
-    # """Standardization"""
-    # if config["standardize"]:
-    #     mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
-    #     std_ = df.iloc[:-test_len].std(axis=0) # train std
-    #     df = (df - mean_) / std_
     print(df.describe())
     
     colnames = df.columns
@@ -209,21 +203,11 @@ def main():
     target = torch.cat([train_target, test_target], dim=0)
     
     if config["model"] == "TLAE":
-        est_quantiles, _ = model.est_quantile(test_context, alphas, config["MC"])
         full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"])
     else:
-        est_quantiles = model.est_quantile(test_context, alphas, config["MC"])
         full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
     
-    test_target = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    target = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    #%%
-    # if config["standardize"]:
-    #     target_ = (target.reshape(-1, config["p"]) * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :]
-    #         ).reshape(context.size(0), config["timesteps"] + config["future"], config["p"])
-    #     est_quantiles = [x * std_.to_numpy()[None, :] + mean_.to_numpy()[None, :] for x in est_quantiles]
-    # else:
-    #     target_ = target.clone()
+    est_quantiles = [Q[-test_len:, ...] for Q in full_est_quantiles]
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
@@ -233,8 +217,10 @@ def main():
         os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
     #%%
     """Vrate and Hit"""
+    test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+    est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     for i, a in enumerate(alphas):
-        vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
         hit = (a - vrate).mean().abs()
         print('Vrate(alpha={}): {:.3f}'.format(a, vrate.mean()), 
                 ', Hit(alpha={}): {:.3f}'.format(a, hit))
@@ -242,7 +228,12 @@ def main():
         wandb.log({f'Hit(alpha={a})': hit.item()})
     #%%
     """Visualize"""
-    figs = utils.visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, show=False, dark=False)
+    target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    full_est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in full_est_quantiles]
+    est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
+    
+    figs = utils.visualize_quantile(target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
@@ -270,76 +261,4 @@ def main():
 #%%
 if __name__ == '__main__':
     main()
-#%%
-# for i, a in enumerate(alphas):
-#     fig, axs = plt.subplots(len(colnames), 1, sharex=True, figsize=(6, 24))
-#     for j in range(len(colnames)):
-#         axs[j].plot(test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-#                 color='black', linestyle='--')
-#         axs[j].plot(est_quantiles[i][:, j].numpy(),
-#                 label=colnames[j] + f'(alpha={a})', color=cols[j])
-#         axs[j].legend(loc='upper right')
-#         # axs[j].set_ylim(-0.2, 0.2)
-#         # axs[j].set_ylabel('return', fontsize=12)
-#     plt.xlabel('days', fontsize=12)
-#     plt.tight_layout()
-#     plt.savefig(f'./assets/{config["model"]}/quantile_alpha({a}).png')
-#     # plt.show()
-#     plt.close()
-#     wandb.log({f'Quantile Estimation:alpha({a})': wandb.Image(fig)})
-#%%
-# fig = plt.figure(figsize=(18, 6))
-# ax = fig.add_subplot(111, projection='3d', proj_type='ortho')
-# for j in range(len(colnames)):
-#     ax.plot(
-#         np.arange(test_context.size(0)), 
-#         est_quantiles[1][::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(), 
-#         zs=j, zdir='x', label=colnames[j])
-#     ax.plot(
-#         np.arange(test_context.size(0)), 
-#         test_target[::config["future"], config["timesteps"]:, j].reshape(-1, ).numpy(),
-#         zs=j, zdir='x', color='black', linewidth=2)
-# ax.set_xticks(range(len(colnames)))
-# ax.set_xticklabels(list(colnames))
-# ax.view_init(45, 45)
-# plt.tight_layout()
-# plt.legend()
-# plt.savefig(f'./assets/test.png')
-# # plt.show()
-# plt.close()
-#%%
-# for j in range(len(colnames)):
-#     fig = plt.figure(figsize=(12, 6))
-#     plt.plot(test_target.numpy()[:, j],
-#             color='black', linestyle='--')
-#     for i, a in enumerate(alphas):
-#         plt.plot(est_quantiles[i][:, j].numpy(),
-#                 label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
-#     # plt.legend()
-#     plt.title(f'{colnames[j]}', fontsize=14)
-#     plt.ylabel('return', fontsize=12)
-#     plt.xlabel('days', fontsize=12)
-#     plt.tight_layout()
-#     plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/{colnames[j]}.png')
-#     # plt.show()
-#     plt.close()
-#     wandb.log({f'Quantile ({colnames[j]})': wandb.Image(fig)})
-
-# for j in range(len(colnames)):
-#     fig = plt.figure(figsize=(12, 6))
-#     plt.plot(target.numpy()[:, j],
-#             color='black', linestyle='--')
-#     for i, a in enumerate(alphas):
-#         plt.plot(full_est_quantiles[i][:, j].numpy(),
-#                 label=colnames[j] + f'(alpha={a})', color=cols[j], linewidth=2)
-#     plt.axvline(x=len(context) - len(test_context), color='b', linewidth=2)
-#     # plt.legend()
-#     plt.title(f'(Full) {colnames[j]}', fontsize=14)
-#     plt.ylabel('return', fontsize=12)
-#     plt.xlabel('days', fontsize=12)
-#     plt.tight_layout()
-#     plt.savefig(f'./assets/{config["model"]}/plots(future={config["future"]})/full_{colnames[j]}.png')
-#     # plt.show()
-#     plt.close()
-#     wandb.log({f'Full Quantile ({colnames[j]})': wandb.Image(fig)})
 #%%
