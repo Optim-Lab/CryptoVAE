@@ -103,7 +103,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=True)) # default configuration
+    config = vars(get_args(debug=False)) # default configuration
     
     """load config"""
     if os.path.isfile(f'./configs/{config["model"]}.yaml'):
