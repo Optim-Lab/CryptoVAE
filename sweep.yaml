@@ -7,16 +7,13 @@ method: grid
 #   name: loss
 parameters:
   model:
-    values: ['GLD']
+    # values: ['GLD_finite', 'GLD_infinite']
+    values: ['LSQF', 'ExpLog', 'TLAE']
+  # prior_var:
+  #   values: [0.1, 0.5, 1]
+  # beta:
+  #   values: [0.1, 0.5, 1, 2, 5]
   future:
     values: [1, 5]
-  # seed:
-  #   values: [1]
-  # d_model:
-  #   values: [8, 128]
-  # d_latent:
-  #   values: [4, 16]
-  # prior_var:
-  #   values: [0.1, 1]
-  # beta:
-  #   values: [0.5, 1, 2]
+  # num:
+  #   values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
