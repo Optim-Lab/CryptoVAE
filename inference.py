@@ -55,7 +55,7 @@ def get_args(debug):
     
     parser.add_argument("--num", default=0, type=int,
                         help="XXX")
-    parser.add_argument('--model', type=str, default='GLD_infinite', 
+    parser.add_argument('--model', type=str, default='GLD_finite', 
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
@@ -87,17 +87,11 @@ def main():
         torch.cuda.manual_seed(config["seed"])
     #%%
     df = pd.read_csv(
-        './data/df_scaled_crypto_indices_20180123.csv',
+        f'./data/{config["data"]}.csv',
         index_col=0
     )
-    # [['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-ADA', 'KRW-ETC']]
     
     test_len = 500
-    # """Standardization"""
-    # if config["standardize"]:
-    #     mean_ = df.iloc[:-test_len].mean(axis=0) # train mean
-    #     std_ = df.iloc[:-test_len].std(axis=0) # train std
-    #     df = (df - mean_) / std_
     print(df.describe())
     
     colnames = df.columns
@@ -159,14 +153,11 @@ def main():
     target = torch.cat([train_target, test_target], dim=0)
     
     if config["model"] == "TLAE":
-        est_quantiles, samples = model.est_quantile(test_context, alphas, config["MC"])
-        full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"])
+        full_est_quantiles, samples = model.est_quantile(context, alphas, config["MC"], test_len)
     else:
-        est_quantiles = model.est_quantile(test_context, alphas, config["MC"])
         full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
     
-    test_target = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    target = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    est_quantiles = [Q[-test_len:, ...] for Q in full_est_quantiles]
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
@@ -175,32 +166,18 @@ def main():
     if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
         os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
     #%%
-    """Visualize"""
-    figs = utils.visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, show=False, dark=False)
-    for j in range(len(colnames)):
-        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
-    #%%
-    """Volatility"""
-    width = est_quantiles[-1] - est_quantiles[0]
-    width /= width.max(dim=0).values
-    volatility = width.mean()
-    print('Volatility(width): {:.3f}'.format(volatility.item()))
-    wandb.log({f'Volatility(width)': volatility.item()})
-    #%%
     """Vrate and Hit"""
+    test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+    est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     for i, a in enumerate(alphas):
-        vrate = (test_target < est_quantiles[i]).to(torch.float32).mean(dim=0)
+        vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
+        hit = (a - vrate).mean().abs()
         print('Vrate(alpha={}): {:.3f}'.format(a, vrate.mean()), 
-              ', Hit(alpha={}): {:.3f}'.format(a, (a - vrate.mean()).abs()))
+                ', Hit(alpha={}): {:.3f}'.format(a, hit))
         wandb.log({f'Vrate(alpha={a})': vrate.mean().item()})
-        wandb.log({f'Hit(alpha={a})': (a - vrate.mean()).abs().item()})
-        # for j, name in enumerate(colnames):
-        #     print('Vrate([{}], alpha={}): {:.3f}'.format(name, a, vrate[j]), 
-        #           ', Hit([{}], alpha={}): {:.3f}'.format(name, a, (a - vrate[j]).abs()))
-        #     wandb.log({f'Vrate([{name}], alpha={a})': vrate[j].item()})
-        #     wandb.log({f'Hit([{name}], alpha={a})': (a - vrate[j]).abs().item()})
+        wandb.log({f'Hit(alpha={a})': hit.item()})
         df = pd.DataFrame(
-            est_quantiles[i].numpy(),
+            est_quantiles_[i].numpy(),
             columns=colnames     
         )
         df.to_csv(f'./assets/{config["model"]}/out(future={config["future"]})/VaR(alpha={a}).csv')
@@ -210,24 +187,37 @@ def main():
     if config["model"] != "TLAE":
         samples = model.sampling(test_context, config["MC"])
     
-    term1 = (samples - test_target[:, None, :]).abs().mean(dim=1)
+    test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+
+    term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
     term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
     CRPS = term1 - term2
     print('CRPS: {:.3f}'.format(CRPS.mean()))
     wandb.log({f'CRPS': CRPS.mean().item()})
     #%%
+    """FIXME"""
     """Quantile loss"""
-    if config["model"] != "TLAE":
-        tau = torch.linspace(0.01, 0.99, 99)
-        est_quantiles = model.est_quantile(test_context, tau, 1, disable=True)
+    # if config["model"] != "TLAE":
+    #     tau = torch.linspace(0.01, 0.99, 99)
+    #     est_quantiles = model.est_quantile(test_context, tau, 1, disable=True)
     
-        quantile_risk = 0
-        for i, a in enumerate(tau):
-            residual = test_target - est_quantiles[i]
-            quantile_risk += ((a - (residual < 0).to(torch.float32)) * residual).mean()
-        quantile_risk /= len(tau)
-        print('Quantile Risk: {:.3f}'.format(quantile_risk.item()))
-        wandb.log({f'Quantile Risk': quantile_risk.item()})
+    #     quantile_risk = 0
+    #     for i, a in enumerate(tau):
+    #         residual = test_target - est_quantiles[i]
+    #         quantile_risk += ((a - (residual < 0).to(torch.float32)) * residual).mean()
+    #     quantile_risk /= len(tau)
+    #     print('Quantile Risk: {:.3f}'.format(quantile_risk.item()))
+    #     wandb.log({f'Quantile Risk': quantile_risk.item()})
+    #%%
+    """Visualize"""
+    target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    full_est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in full_est_quantiles]
+    est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
+    
+    figs = utils.visualize_quantile(target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, show=False, dark=False)
+    for j in range(len(colnames)):
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     wandb.run.finish()
 #%%
