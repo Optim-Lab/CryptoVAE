@@ -69,7 +69,7 @@ class TLAE(nn.Module):
         xhat = self.decoder(z)
         return xhat, future_mu, future_z
     
-    def est_quantile(self, test_context, alphas, MC, disable=False):
+    def est_quantile(self, test_context, alphas, MC, test_len, disable=False):
         torch.manual_seed(self.config["seed"])
         if self.config["cuda"]:
             torch.cuda.manual_seed(self.config["seed"])
@@ -79,10 +79,12 @@ class TLAE(nn.Module):
             with torch.no_grad():
                 xhat, _, _ = self.forward(test_context, deterministic=True)
                 samples.append(xhat[:, self.config["timesteps"]:, :])
-        samples = torch.cat(samples, dim=1)
+        samples = torch.stack(samples)
         
         est_quantiles = []
         for i, a in enumerate(alphas):
-            est_quantiles.append(samples.quantile(q=a, dim=1))
+            est_quantiles.append(samples.quantile(q=a, dim=0))
+            
+        samples = samples[:, -test_len:, :, :].reshape(self.config["MC"], -1, self.config["p"]).permute(1, 0, 2)
         return est_quantiles, samples
 #%%

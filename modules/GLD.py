@@ -46,13 +46,13 @@ class GLD(nn.Module):
     
     def quantile_parameter(self, h):
         h = torch.split(h, 4, dim=1)
-        theta1 = [h_[:, [0]].tanh() for h_ in h]
+        theta1 = [h_[:, [0]] for h_ in h]
         theta2 = [nn.Softplus()(h_[:, [1]]) for h_ in h]
-        if self.config["model"] == 'GLD(finite)':
+        if self.config["model"] == 'GLD_finite':
             # finite support
             theta3 = [(h_[:, [2]]).exp() for h_ in h]
             theta4 = [(h_[:, [3]]).exp() for h_ in h]
-        elif self.config["model"] == 'GLD(infinite)':
+        elif self.config["model"] == 'GLD_infinite':
             # half-infinite support (support maximum is infinite)
             theta3 = [(h_[:, [2]]).exp() for h_ in h]
             theta4 = [-nn.Softplus()(h_[:, [3]]) for h_ in h]
@@ -132,9 +132,8 @@ class GLD(nn.Module):
                 
                 Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
                 Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
-                Qs.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
-            Qs = torch.cat(Qs, dim=1).mean(dim=1)
-            est_quantiles.append(Qs.cpu())
+                Qs.append(Qs_.cpu())
+            est_quantiles.append(torch.mean(torch.stack(Qs), dim=0))
         return est_quantiles
     
     def sampling(self, test_context, MC, disable=False):
@@ -157,7 +156,7 @@ class GLD(nn.Module):
             
             Qs_ = self.quantile_function(alpha, theta1, theta2, theta3, theta4)
             Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
-            samples.append(Qs_[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
+            samples.append(Qs_.reshape(-1, self.config["p"])[:, None, :].cpu())
         samples = torch.cat(samples, dim=1)
-        return samples.cpu()
+        return samples
 #%%
