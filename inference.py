@@ -181,7 +181,7 @@ def main():
             est_quantiles_[i].numpy(),
             columns=colnames     
         )
-        df.to_csv(f'{out_dir}/VaR(alpha={a})_{config["model"]}_beta{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.csv')
+        df.to_csv(f'{out_dir}/VaR(alpha={a})_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.csv')
         wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
     #%%
     """CRPS: Proposal model & TLAE"""

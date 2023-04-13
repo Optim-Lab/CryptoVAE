@@ -59,7 +59,7 @@ def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, c
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
         plt.legend(loc = 'upper left')
-        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_beta{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
+        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         if show:
             plt.show()
         # plt.show()
