@@ -176,7 +176,7 @@ class LSQF(nn.Module):
                 Qs_ = self.quantile_function(alpha, gamma, beta, delta)
                 Qs_ = torch.cat([x[:, None, :] for x in torch.split(Qs_, len(test_context), dim=0)], dim=1)
                 Qs_tmp.append(Qs_)
-            samples.append(torch.cat(Qs_tmp, dim=-1)[::self.config["future"], :, :].reshape(-1, self.config["p"])[:, None, :])
+            samples.append(torch.cat(Qs_tmp, dim=-1).reshape(-1, self.config["p"])[:, None, :])
         samples = torch.cat(samples, dim=1)
         return samples.cpu()
 #%%
