@@ -55,7 +55,7 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD_infinite', 
+    parser.add_argument('--model', type=str, default='GLD_finite', 
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
@@ -203,7 +203,7 @@ def main():
     target = torch.cat([train_target, test_target], dim=0)
     
     if config["model"] == "TLAE":
-        full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"])
+        full_est_quantiles, _ = model.est_quantile(context, alphas, config["MC"], test_len)
     else:
         full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
     
