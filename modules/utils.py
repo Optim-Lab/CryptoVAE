@@ -18,8 +18,7 @@ def set_random_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
 #%%
-def load_config(config):
-    config_path = f'./configs/{config["model"]}.yaml'
+def load_config(config, config_path):
     with open(config_path, 'r') as config_file:
         args = yaml.load(config_file, Loader=yaml.FullLoader)
     for key in config.keys():
@@ -60,7 +59,7 @@ def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, c
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
         plt.legend(loc = 'upper left')
-        plt.savefig(f'{path}/{colnames[j]}_beta{config["beta"]}_var{config["prior_var"]}.png')
+        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_beta{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         if show:
             plt.show()
         # plt.show()

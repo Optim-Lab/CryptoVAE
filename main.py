@@ -106,8 +106,14 @@ def main():
     config = vars(get_args(debug=False)) # default configuration
     
     """load config"""
-    if os.path.isfile(f'./configs/{config["model"]}.yaml'):
-        config = utils.load_config(config)
+    if config["model"].startswith("GLD"):
+        config_path = f'./configs/{config["model"]}_{config["future"]}.yaml'
+        if os.path.isfile(config_path):
+            config = utils.load_config(config, config_path)
+    else:
+        config_path = f'./configs/{config["model"]}.yaml'
+        if os.path.isfile(config_path):
+            config = utils.load_config(config, config_path)
     
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if config["cuda"] else torch.device('cpu')
