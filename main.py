@@ -103,7 +103,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=False)) # default configuration
+    config = vars(get_args(debug=True)) # default configuration
     
     """load config"""
     if os.path.isfile(f'./configs/{config["model"]}.yaml'):
@@ -211,10 +211,9 @@ def main():
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}/out(future={})/'.format(config["model"], config["future"])):
-        os.makedirs('./assets/{}/out(future={})/'.format(config["model"], config["future"]))
-    if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
-        os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
+    
+    plots_dir = './assets/{}/plots(future={})/'.format(config["model"], config["future"])
+    if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Vrate and Hit"""
     test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
@@ -233,7 +232,10 @@ def main():
     full_est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in full_est_quantiles]
     est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     
-    figs = utils.visualize_quantile(target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, show=False, dark=False)
+    figs = utils.visualize_quantile(
+        target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, 
+        path=plots_dir,
+        show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
@@ -243,9 +245,10 @@ def main():
     #%%
     """model save"""
     torch.save(model.state_dict(), f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
-    artifact = wandb.Artifact(f'{config["data"]}_{config["model"]}_{config["future"]}', 
-                            type='model',
-                            metadata=config) # description=""
+    artifact = wandb.Artifact(
+        f'{config["data"]}_{config["model"]}_{config["future"]}', 
+        type='model',
+        metadata=config) # description=""
     artifact.add_file(f'./assets/{config["data"]}_{config["model"]}_{config["future"]}.pth')
     artifact.add_file('./main.py')
     try:

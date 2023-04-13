@@ -161,10 +161,11 @@ def main():
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
-    if not os.path.exists('./assets/{}/out(future={})/'.format(config["model"], config["future"])):
-        os.makedirs('./assets/{}/out(future={})/'.format(config["model"], config["future"]))
-    if not os.path.exists('./assets/{}/plots(future={})/'.format(config["model"], config["future"])):
-        os.makedirs('./assets/{}/plots(future={})/'.format(config["model"], config["future"]))
+        
+    out_dir = f'./assets/{config["model"]}/out(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'
+    plots_dir = f'./assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
+    if not os.path.exists(out_dir): os.makedirs(out_dir)
+    if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Vrate and Hit"""
     test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
@@ -180,7 +181,7 @@ def main():
             est_quantiles_[i].numpy(),
             columns=colnames     
         )
-        df.to_csv(f'./assets/{config["model"]}/out(future={config["future"]})/VaR(alpha={a}).csv')
+        df.to_csv(f'{out_dir}/VaR(alpha={a}).csv')
         wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
     #%%
     """CRPS: Proposal model & TLAE"""
@@ -215,7 +216,10 @@ def main():
     full_est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in full_est_quantiles]
     est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     
-    figs = utils.visualize_quantile(target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, show=False, dark=False)
+    figs = utils.visualize_quantile(
+        target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, 
+        path=plots_dir,
+        show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
