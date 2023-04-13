@@ -27,7 +27,7 @@ def load_config(config):
             config[key] = args[key]
     return config
 #%%
-def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, path, show=False, dark=False):
+def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, path, show=False, dark=False):
     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     
     mpl.rcParams["figure.dpi"] = 200
@@ -60,7 +60,7 @@ def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, c
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
         plt.legend(loc = 'upper left')
-        plt.savefig(f'{path}/{colnames[j]}.png')
+        plt.savefig(f'{path}/{colnames[j]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         if show:
             plt.show()
         # plt.show()

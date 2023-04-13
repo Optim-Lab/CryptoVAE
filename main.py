@@ -233,7 +233,7 @@ def main():
     est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     
     figs = utils.visualize_quantile(
-        target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, 
+        target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, 
         path=plots_dir,
         show=False, dark=False)
     for j in range(len(colnames)):
