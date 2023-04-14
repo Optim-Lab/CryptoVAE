@@ -1,4 +1,5 @@
 #%%
+import pandas as pd
 import numpy as np
 import random
 import torch
@@ -26,9 +27,49 @@ def load_config(config, config_path):
             config[key] = args[key]
     return config
 #%%
-def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, colnames, config, path, show=False, dark=False):
-    # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+def stock_data_generator(df, C, tau):
+    n = df.shape[0] - C - tau
+        
+    # C = k
+    # T = k+tau
+    input_data = np.zeros((n, C, df.shape[1]))
+    infer_data = np.zeros((n, C+tau, df.shape[1]))
+
+    for i in range(n):
+        input_data[i, :, :] = df.iloc[i : i+C, :]
+        infer_data[i, :, :] = df.iloc[i : i+C+tau, :]
     
+    input_data = torch.from_numpy(input_data).to(torch.float32)
+    infer_data = torch.from_numpy(infer_data).to(torch.float32)
+    return input_data, infer_data
+#%%
+def build_datasets(df, test_len, increment, config):
+    train_list = []
+    test_list = []
+    for j in range(increment):
+        train_idx_last = len(df) - test_len * (increment - j)
+        test_idx_last = len(df) - test_len * (increment - 1 - j)
+        train = df.iloc[: train_idx_last]
+        test = df.iloc[-(test_len * (increment - j) + config["timesteps"] + config["future"]) : test_idx_last]
+        
+        """data save"""
+        train.to_csv(f'./assets/{config["model"]}/{config["data"]}_phase{j+1}_train.csv')
+        test.to_csv(f'./assets/{config["model"]}/{config["data"]}_phase{j+1}_test.csv')
+        
+        train_context, train_target = stock_data_generator(train, config["timesteps"], config["future"])
+        test_context, test_target = stock_data_generator(test, config["timesteps"], config["future"])
+        
+        assert train_context.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+        assert train_target.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+        assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+        assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+        
+        train_list.append((train_context, train_target))
+        test_list.append((test_context, test_target))
+    return train_list, test_list
+#%%
+def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
+    # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
     SMALL_SIZE = 10
@@ -46,16 +87,20 @@ def visualize_quantile(target, test_target, full_est_quantiles, est_quantiles, c
     for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
         fig = plt.figure(figsize=(12, 7))   
         conf = plt.fill_between(
-            np.arange(target.shape[0] - test_target.shape[0], target.shape[0]), 
-            est_quantiles[0][:, j].numpy(), 
-            est_quantiles[2][:, j].numpy(), 
+            np.arange(start_idx, target_.shape[0]), 
+            estQ[0][:, j].numpy(), 
+            estQ[2][:, j].numpy(), 
             color='blue', alpha=0.3, label=r'80% interval')
         plt.plot(
-            target.numpy()[:, j],
+            target_.numpy()[:, j],
             label=colnames[j], color='black', linestyle='--', linewidth=2)
         plt.plot(
-            full_est_quantiles[1][:, j].numpy(),
+            np.arange(start_idx, target_.shape[0]),
+            estQ[1][:, j].numpy(),
             label='Median', color='green', linewidth=2)
+        plt.axvline(x=start_idx, color='blue', linewidth=2)
+        plt.axvline(x=start_idx + test_len, color='blue', linewidth=2)
+        plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
         plt.legend(loc = 'upper left')
