@@ -197,9 +197,9 @@ def main():
         print(f"\nPhase {j+1} Quantile Estimation...\n")
 
         if config["model"] == "TLAE":
-            est_quantiles, _ = model[j].est_quantile(test_context, alphas, 12, config["test_len"])
+            est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
-            est_quantiles = model[j].est_quantile(test_context, alphas, 12)
+            est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
         phaseQ.append(est_quantiles)
         print()
         """Vrate and Hit"""
