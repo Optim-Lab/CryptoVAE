@@ -53,8 +53,8 @@ def build_datasets(df, test_len, increment, config):
         test = df.iloc[-(test_len * (increment - j) + config["timesteps"] + config["future"]) : test_idx_last]
         
         """data save"""
-        train.to_csv(f'./assets/{config["model"]}/{config["data"]}_phase{j+1}_train.csv')
-        test.to_csv(f'./assets/{config["model"]}/{config["data"]}_phase{j+1}_test.csv')
+        train.to_csv(f'./assets/{config["model"]}/{config["data"]}_future{config["future"]}_phase{j+1}_train.csv')
+        test.to_csv(f'./assets/{config["model"]}/{config["data"]}_future{config["future"]}_phase{j+1}_test.csv')
         
         train_context, train_target = stock_data_generator(train, config["timesteps"], config["future"])
         test_context, test_target = stock_data_generator(test, config["timesteps"], config["future"])

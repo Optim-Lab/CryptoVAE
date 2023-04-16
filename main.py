@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=['Incremental procedure'],
+    tags=["Incremental procedure"],
 )
 #%%
 import argparse
