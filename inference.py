@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=['Inference'],
+    tags=["Inference", "Incremental procedure"],
 )
 #%%
 import argparse
@@ -71,7 +71,7 @@ def main():
     config = vars(get_args(debug=False)) # default configuration
     
     """model load"""
-    artifact = wandb.use_artifact('anseunghwan/DDM/{}_{}_{}:v{}'.format(
+    artifact = wandb.use_artifact('anseunghwan/DDM/phase_{}_{}_{}:v{}'.format(
         config["data"], config["model"], config["future"], config["num"]), type='model')
     for key, item in artifact.metadata.items():
         config[key] = item
@@ -86,78 +86,47 @@ def main():
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
     #%%
+    """train, test split"""
     df = pd.read_csv(
         f'./data/{config["data"]}.csv',
         index_col=0
     )
-    
-    test_len = 500
     print(df.describe())
     
     colnames = df.columns
     config["p"] = df.shape[1]
-    #%%
-    """train, test split"""
-    train = df.iloc[:-test_len]
-    test = df.iloc[-(test_len + config["timesteps"] + config["future"]):]
-    
-    def stock_data_generator(df, C, tau):
-        n = df.shape[0] - C - tau
-            
-        # C = k
-        # T = k+tau
-        input_data = np.zeros((n, C, df.shape[1]))
-        infer_data = np.zeros((n, C+tau, df.shape[1]))
-
-        for i in range(n):
-            input_data[i, :, :] = df.iloc[i : i+C, :]
-            infer_data[i, :, :] = df.iloc[i : i+C+tau, :]
-        
-        input_data = torch.from_numpy(input_data).to(torch.float32)
-        infer_data = torch.from_numpy(infer_data).to(torch.float32)
-        return input_data, infer_data
-
-    train_context, train_target = stock_data_generator(train, config["timesteps"], config["future"])
-    test_context, test_target = stock_data_generator(test, config["timesteps"], config["future"])
-    
-    assert train_context.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
-    assert train_target.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
-    assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
-    assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+    train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
     #%%
     try:
         model_module = importlib.import_module('modules.{}'.format(config["model"]))
         importlib.reload(model_module)
-        model = getattr(model_module, config["model"])(config, device).to(device)
+        model = [getattr(model_module, config["model"])(config, device).to(device) for _ in range(config["increment"])]
     except:
         model_module = importlib.import_module('modules.{}'.format(config["model"].split('_')[0]))
         importlib.reload(model_module)
-        model = getattr(model_module, config["model"].split('_')[0])(config, device).to(device)
-    
-    if config["cuda"]:
-        model_name = [x for x in os.listdir(model_dir) if x.endswith('pth')][0]
-        model.load_state_dict(
-            torch.load(
-                model_dir + '/' + model_name))
-    else:
-        model_name = [x for x in os.listdir(model_dir) if x.endswith('pth')][0]
-        model.load_state_dict(
-            torch.load(
-                model_dir + '/' + model_name, map_location=torch.device('cpu')))
-    
-    model.eval()
+        model = [getattr(model_module, config["model"].split('_')[0])(config, device).to(device) for _ in range(config["increment"])]
     #%%
-    """Quantile Estimation"""
-    alphas = [0.1, 0.5, 0.9]
-    context = torch.cat([train_context, test_context], dim=0)
-    target = torch.cat([train_target, test_target], dim=0)
-    
-    if config["model"] == "TLAE":
-        full_est_quantiles, samples = model.est_quantile(context, alphas, config["MC"], test_len)
+    if config["cuda"]:
+        model_name = sorted([x for x in os.listdir(model_dir) if x.endswith('pth')])
+        for n, m in zip(model_name, model):
+            m.load_state_dict(
+                torch.load(
+                    model_dir + '/' + n))
     else:
-        full_est_quantiles = model.est_quantile(context, alphas, config["MC"])
+        model_name = sorted([x for x in os.listdir(model_dir) if x.endswith('pth')])
+        for n, m in zip(model_name, model):
+            m.load_state_dict(
+                torch.load(
+                    model_dir + '/' + n, map_location=torch.device('cpu')))
     
-    est_quantiles = [Q[-test_len:, ...] for Q in full_est_quantiles]
+    for m in model:
+        print(m.eval())
+    #%%
+    """Number of Parameters"""
+    count_parameters = lambda model: sum(p.numel() for p in model.parameters() if p.requires_grad)
+    num_params = count_parameters(model[0])
+    print("Number of Parameters:", num_params)
+    wandb.log({'Number of Parameters': num_params})
     #%%
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
@@ -167,34 +136,68 @@ def main():
     if not os.path.exists(out_dir): os.makedirs(out_dir)
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
-    """Vrate and Hit"""
-    test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
-    est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
-    for i, a in enumerate(alphas):
-        vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
-        hit = (a - vrate).mean().abs()
-        print('Vrate(alpha={}): {:.3f}'.format(a, vrate.mean()), 
-                ', Hit(alpha={}): {:.3f}'.format(a, hit))
-        wandb.log({f'Vrate(alpha={a})': vrate.mean().item()})
-        wandb.log({f'Hit(alpha={a})': hit.item()})
-        df = pd.DataFrame(
-            est_quantiles_[i].numpy(),
-            columns=colnames     
-        )
-        df.to_csv(f'{out_dir}/VaR(alpha={a})_beta{config["beta"]}_var{config["prior_var"]}.csv')
-        wandb.run.summary[f'VaR(alpha={a})'] = wandb.Table(data=df)
+    """Quantile Estimation"""
+    alphas = [0.1, 0.5, 0.9]
+    phaseQ = []
+    for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
+        print(f"\nPhase {j+1} Quantile Estimation...\n")
+
+        if config["model"] == "TLAE":
+            est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
+        else:
+            est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
+        phaseQ.append(est_quantiles)
+        print()
+        """Vrate and Hit"""
+        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
+        for i, a in enumerate(alphas):
+            vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
+            hit = (a - vrate).mean().abs()
+            print(f'[Phase{j+1}] Vrate({a}): {vrate.mean():.3f},', f'Hit({a}): {hit:.3f}')
+            wandb.log({f'[Phase{j+1}] Vrate({a})': vrate.mean().item()})
+            wandb.log({f'[Phase{j+1}] Hit({a})': hit.item()})
+            df = pd.DataFrame(
+                est_quantiles_[i].numpy(),
+                columns=colnames     
+            )
+            df.to_csv(f'{out_dir}/VaR(alpha={a})_phase{j+1}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.csv')
+            wandb.run.summary[f'VaR(alpha={a})_phase{j+1}'] = wandb.Table(data=df)
+    #%%
+    """Visualize"""
+    estQ = []
+    for j in range(len(alphas)):
+        estQ.append(torch.cat([phaseQ[i][j] for i in range(len(phaseQ))], dim=0))
+    estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in estQ]
+    
+    target = torch.cat([train_list[-1][1], test_list[-1][1]], dim=0)
+    target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    start_idx = train_list[0][0].shape[0]
+    
+    figs = utils.visualize_quantile(
+        target_, estQ, start_idx, colnames, config["test_len"], config,
+        path=plots_dir,
+        show=False, dark=False)
+    for j in range(len(colnames)):
+        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     """CRPS: Proposal model & TLAE"""
-    if config["model"] != "TLAE":
-        samples = model.sampling(test_context, config["MC"])
-    
-    test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+    for j, (test_context, test_target) in enumerate(test_list):
+        print(f"\nPhase {j+1} CRPS...\n")
 
-    term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
-    term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
-    CRPS = term1 - term2
-    print('CRPS: {:.3f}'.format(CRPS.mean()))
-    wandb.log({f'CRPS': CRPS.mean().item()})
+        if config["model"] == "TLAE":
+            _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
+        else:
+            samples = model[j].sampling(test_context, config["MC"])
+        
+        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        
+        term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
+        term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
+        CRPS = term1 - term2
+        print()
+        print(f'[Phase{j+1}] CRPS: {CRPS.mean():.3f}')
+        wandb.log({f'[Phase{j+1}] CRPS': CRPS.mean().item()})
     #%%
     """FIXME"""
     """Quantile loss"""
@@ -209,19 +212,6 @@ def main():
     #     quantile_risk /= len(tau)
     #     print('Quantile Risk: {:.3f}'.format(quantile_risk.item()))
     #     wandb.log({f'Quantile Risk': quantile_risk.item()})
-    #%%
-    """Visualize"""
-    target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    test_target_ = test_target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    full_est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in full_est_quantiles]
-    est_quantiles_ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
-    
-    figs = utils.visualize_quantile(
-        target_, test_target_, full_est_quantiles_, est_quantiles_, colnames, config, 
-        path=plots_dir,
-        show=False, dark=False)
-    for j in range(len(colnames)):
-        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     wandb.run.finish()
 #%%

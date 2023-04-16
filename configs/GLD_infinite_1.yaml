@@ -6,3 +6,4 @@ num_layer: 1
 prior_var: 0.1
 beta: 1
 epochs: 200
+future: 1
