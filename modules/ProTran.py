@@ -17,6 +17,61 @@ posterior = namedtuple(
     'posterior', 
     ['z', 'mean', 'logvar'])
 #%%
+class PriorModule(nn.Module):
+    def __init__(self, config, device):
+        super(PriorModule, self).__init__()
+        self.config = config
+        self.device = device
+        
+        self.w0 = nn.Parameter(
+            torch.randn((1, 1, config["d_model"])) * 0.1, # (batch_size, timestep, d_model)
+            requires_grad=True)
+
+        self.mha1 = layers.MultiHeadAttention(config, device)
+        self.mha2 = layers.MultiHeadAttention(config, device)
+        self.mha3 = layers.MultiHeadAttention(config, device)
+
+        self.fc1 = nn.Linear(config["d_model"], 2 * config["d_latent"]) # prior variance is learned
+        self.fc2 = nn.Linear(config["d_latent"], config["d_model"])
+        self.fc3 = nn.Linear(config["d_latent"], config["d_model"])
+
+        self.layer_norm1 = nn.LayerNorm(config["d_model"])
+        self.layer_norm2 = nn.LayerNorm(config["d_model"])
+        self.layer_norm3 = nn.LayerNorm(config["d_model"])
+
+        self.add_posit = layers.AddPosition(config["d_model"], config["timesteps"] + config["future"], device)
+        
+    def forward(self, h_C, prior_W=None):
+        w = self.w0.repeat(h_C.size(0), 1, 1)
+        
+        w_list = []
+        z_list = []
+        mean_list = []
+        logvar_list = []
+        
+        for i in range(self.config["timesteps"] + self.config["future"]):
+            if prior_W == None:
+                w_bar = self.layer_norm1(w[:, i:i+1, :] + self.mha1(w[:, i:i+1, :], w[:, :i+1, :], w[:, :i+1, :]))
+            else:
+                w_tilde = self.layer_norm3(w[:, i:i+1, :] + self.mha3(w[:, i:i+1, :], prior_W, prior_W))
+                w_bar = self.layer_norm1(w_tilde + self.mha1(w_tilde, w[:, :i+1, :], w[:, :i+1, :]))
+                
+            w_hat = self.layer_norm2(w_bar + self.mha2(w_bar, h_C, h_C))
+
+            mean, logvar = torch.split(self.fc1(w_hat), self.config["d_latent"], dim=2)
+            epsilon = torch.randn(mean.shape).to(self.device)
+            z = mean + (logvar / 2).exp() * epsilon
+            
+            w_hat = self.add_posit(w_hat + self.fc3(z), i)
+            w = torch.cat([w, w_hat], dim=1)
+
+            w_list.append(w_hat)
+            z_list.append(z.squeeze(1)) 
+            mean_list.append(mean.squeeze(1))
+            logvar_list.append(logvar.squeeze(1))
+        
+        return w_list, z_list, mean_list, logvar_list
+#%%
 class ProTran(nn.Module):
     def __init__(self, config, device):
         super(ProTran, self).__init__()
@@ -27,22 +82,22 @@ class ProTran(nn.Module):
         """Generative model"""
         self.fc_C = nn.Linear(config["p"], config["d_model"])
         self.add_posit_C = layers.AddPosition2(config["d_model"], config["timesteps"], device)
-        self.prior = layers.PriorModule(self.config, device) 
+        self.prior = PriorModule(self.config, device) 
 
         """Inference model"""
         self.fc_T = nn.Linear(config["p"], config["d_model"])
         self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
-        self.decoder = nn.ModuleList(
-            [nn.Linear(config["d_latent"], config["p"])
-             for _ in range(config["timesteps"] + config["future"])])
         # self.decoder = nn.ModuleList(
-        #     [nn.Sequential(
-        #         nn.Linear(config["d_latent"], 16),
-        #         nn.ELU(),
-        #         nn.Linear(16, 4 * config["p"])) 
-        #     for _ in range(config["timesteps"] + config["future"])])
+        #     [nn.Linear(config["d_latent"], config["p"])
+        #      for _ in range(config["timesteps"] + config["future"])])
+        self.decoder = nn.ModuleList(
+            [nn.Sequential(
+                nn.Linear(config["d_latent"], 16),
+                nn.ELU(),
+                nn.Linear(16, config["p"])) 
+            for _ in range(config["timesteps"] + config["future"])])
     
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))
