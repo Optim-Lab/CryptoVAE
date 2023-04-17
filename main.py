@@ -55,11 +55,10 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD_infinite', 
-                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
+    parser.add_argument('--model', type=str, default='GLD_finite', 
+                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
-    # parser.add_argument('--standardize', action='store_false')
     
     parser.add_argument("--d_latent", default=16, type=int,
                         help="XXX")
@@ -75,8 +74,6 @@ def get_args(debug):
                         help="XXX")
     parser.add_argument("--M", default=10, type=int,
                         help="XXX")
-    # parser.add_argument("--tau", default=2, type=float,
-    #                     help="scaling parameter of softmax")
     parser.add_argument("--K", default=20, type=int,
                         help="XXX")
     
@@ -129,6 +126,9 @@ def main():
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
     #%%
+    if not os.path.exists('./assets/{}'.format(config["model"])):
+        os.makedirs('./assets/{}'.format(config["model"]))
+        
     """train, test split"""
     df = pd.read_csv(
         f'./data/{config["data"]}.csv',
@@ -184,9 +184,6 @@ def main():
                 print(print_input)
                 wandb.log({x : y for x, y in logs.items()})
     #%%
-    if not os.path.exists('./assets/{}'.format(config["model"])):
-        os.makedirs('./assets/{}'.format(config["model"]))
-    
     plots_dir = './assets/{}/plots(future={})/'.format(config["model"], config["future"])
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
@@ -196,7 +193,7 @@ def main():
     for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
         print(f"\nPhase {j+1} Quantile Estimation...\n")
 
-        if config["model"] == "TLAE":
+        if config["model"] in ["TLAE", "ProTran"]:
             est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
             est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
