@@ -131,9 +131,7 @@ def main():
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
         
-    out_dir = f'./assets/{config["model"]}/out(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'
     plots_dir = f'./assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
-    if not os.path.exists(out_dir): os.makedirs(out_dir)
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Quantile Estimation"""
