@@ -140,7 +140,7 @@ def main():
     for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
         print(f"\nPhase {j+1} Quantile Estimation...\n")
 
-        if config["model"] == "TLAE":
+        if config["model"] in ["TLAE", "ProTran"]:
             est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
             est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
@@ -195,7 +195,7 @@ def main():
     for j, (test_context, test_target) in enumerate(test_list):
         print(f"\nPhase {j+1} CRPS...\n")
 
-        if config["model"] == "TLAE":
+        if config["model"] in ["TLAE", "ProTran"]:
             _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
             samples = model[j].sampling(test_context, config["MC"])
