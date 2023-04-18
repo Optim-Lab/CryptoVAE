@@ -89,15 +89,15 @@ class ProTran(nn.Module):
         self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
-        # self.decoder = nn.ModuleList(
-        #     [nn.Linear(config["d_latent"], config["p"])
-        #      for _ in range(config["timesteps"] + config["future"])])
         self.decoder = nn.ModuleList(
-            [nn.Sequential(
-                nn.Linear(config["d_latent"], 16),
-                nn.ELU(),
-                nn.Linear(16, config["p"])) 
-            for _ in range(config["timesteps"] + config["future"])])
+            [nn.Linear(config["d_latent"], config["p"])
+             for _ in range(config["timesteps"] + config["future"])])
+        # self.decoder = nn.ModuleList(
+        #     [nn.Sequential(
+        #         nn.Linear(config["d_latent"], 16),
+        #         nn.ELU(),
+        #         nn.Linear(16, config["p"])) 
+        #     for _ in range(config["timesteps"] + config["future"])])
     
     def get_prior(self, context_batch):
         h_C = self.add_posit_C(self.fc_C(context_batch))

@@ -2,6 +2,6 @@ seed: 1
 model: 'ProTran'
 d_latent: 16
 d_model: 8
-num_layer: 1
+num_layer: 2
 beta: 0.1
 epochs: 200
