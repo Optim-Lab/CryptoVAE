@@ -9,6 +9,7 @@ parameters:
   model:
     # values: ['GLD_finite', 'GLD_infinite']
     values: ['LSQF', 'ExpLog', 'TLAE']
+    # values: ['ProTran']
   # prior_var:
   #   values: [0.1, 0.5, 1]
   # beta:

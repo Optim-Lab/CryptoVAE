@@ -131,9 +131,7 @@ def main():
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
         
-    out_dir = f'./assets/{config["model"]}/out(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'
     plots_dir = f'./assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
-    if not os.path.exists(out_dir): os.makedirs(out_dir)
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Quantile Estimation"""
@@ -142,7 +140,7 @@ def main():
     for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
         print(f"\nPhase {j+1} Quantile Estimation...\n")
 
-        if config["model"] == "TLAE":
+        if config["model"] in ["TLAE", "ProTran"]:
             est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
             est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
@@ -153,16 +151,28 @@ def main():
         est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
         for i, a in enumerate(alphas):
             vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
-            hit = (a - vrate).mean().abs()
-            print(f'[Phase{j+1}] Vrate({a}): {vrate.mean():.3f},', f'Hit({a}): {hit:.3f}')
+            hit = (a - vrate).abs()
+            print(f'[Phase{j+1}] Vrate({a}): {vrate.mean():.3f},', f'Hit({a}): {hit.mean():.3f}')
             wandb.log({f'[Phase{j+1}] Vrate({a})': vrate.mean().item()})
-            wandb.log({f'[Phase{j+1}] Hit({a})': hit.item()})
-            df = pd.DataFrame(
-                est_quantiles_[i].numpy(),
-                columns=colnames     
-            )
-            df.to_csv(f'{out_dir}/VaR(alpha={a})_phase{j+1}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.csv')
-            wandb.run.summary[f'VaR(alpha={a})_phase{j+1}'] = wandb.Table(data=df)
+            wandb.log({f'[Phase{j+1}] Hit({a})': hit.mean().item()})
+            for c, v, h in zip(colnames, vrate, hit):
+                print(f'[Phase{j+1}, {c}] Vrate({a}): {v:.3f},', f'Hit({a}): {h:.3f}')
+                wandb.log({f'[Phase{j+1}, {c}] Vrate({a})': v.item()})
+                wandb.log({f'[Phase{j+1}, {c}] Hit({a})': h.item()})
+            print()
+        print()
+        """Quantile loss"""
+        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
+        for i, a in enumerate(alphas):
+            u = test_target_ - est_quantiles_[i]
+            QL = ((a - (u < 0).to(torch.float32)) * u).mean(dim=0)
+            print(f'[Phase{j+1}] QL({a}): {QL.mean():.3f}')
+            wandb.log({f'[Phase{j+1}] QL({a})': QL.mean().item()})
+            for c, q in zip(colnames, QL):
+                print(f'[Phase{j+1}, {c}] QL({a}): {q:.3f}')
+                wandb.log({f'[Phase{j+1}, {c}] QL({a})': q.item()})
+            print()
     #%%
     """Visualize"""
     estQ = []
@@ -185,7 +195,7 @@ def main():
     for j, (test_context, test_target) in enumerate(test_list):
         print(f"\nPhase {j+1} CRPS...\n")
 
-        if config["model"] == "TLAE":
+        if config["model"] in ["TLAE", "ProTran"]:
             _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
         else:
             samples = model[j].sampling(test_context, config["MC"])
@@ -194,24 +204,14 @@ def main():
         
         term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
         term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
-        CRPS = term1 - term2
+        CRPS = (term1 - term2).mean(dim=0)
         print()
         print(f'[Phase{j+1}] CRPS: {CRPS.mean():.3f}')
         wandb.log({f'[Phase{j+1}] CRPS': CRPS.mean().item()})
-    #%%
-    """FIXME"""
-    """Quantile loss"""
-    # if config["model"] != "TLAE":
-    #     tau = torch.linspace(0.01, 0.99, 99)
-    #     est_quantiles = model.est_quantile(test_context, tau, 1, disable=True)
-    
-    #     quantile_risk = 0
-    #     for i, a in enumerate(tau):
-    #         residual = test_target - est_quantiles[i]
-    #         quantile_risk += ((a - (residual < 0).to(torch.float32)) * residual).mean()
-    #     quantile_risk /= len(tau)
-    #     print('Quantile Risk: {:.3f}'.format(quantile_risk.item()))
-    #     wandb.log({f'Quantile Risk': quantile_risk.item()})
+        for c, q in zip(colnames, CRPS):
+            print(f'[Phase{j+1}, {c}] CRPS: {q:.3f}')
+            wandb.log({f'[Phase{j+1}, {c}] CRPS': q.item()})
+        print()
     #%%
     wandb.run.finish()
 #%%
