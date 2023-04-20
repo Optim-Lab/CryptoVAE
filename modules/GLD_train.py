@@ -72,6 +72,10 @@ def train_function(context, target, model, iterations, config, optimizer, device
         
     return logs
 #%%
+# quantile = (residual * (tau - (residual < 0).to(torch.float32))) 
+# quantile /= torch.repeat_interleave(maxvalues.t(), context_batch.size(0) * config["future"], dim=0)
+# quantile = quantile.sum() / (config["K"] * context_batch.size(0))
+#%%
 # gamma = torch.cat([torch.cat(params[i][0], dim=0) for i in range(len(params))], dim=0)
 # beta = torch.cat([torch.cat(params[i][1], dim=0) for i in range(len(params))], dim=0)
 # delta = torch.cat([torch.cat(params[i][2], dim=0) for i in range(len(params))], dim=0)

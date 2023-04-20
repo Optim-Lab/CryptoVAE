@@ -31,18 +31,18 @@ class ExpLog(nn.Module):
 
         """Inference model"""
         self.fc_T = nn.Linear(config["p"], config["d_model"])
-        self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
+        self.add_posit_T = layers.AddPosition2(config["d_model"], config["future"], device)
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
         self.spline = nn.ModuleList(
             [nn.Linear(config["d_latent"], 2 * config["p"])
-             for _ in range(config["timesteps"] + config["future"])])
+             for _ in range(config["future"])])
         # self.spline = nn.ModuleList(
         #     [nn.Sequential(
         #         nn.Linear(config["d_latent"], 16),
         #         nn.ELU(),
         #         nn.Linear(16, 4 * config["p"])) 
-        #     for _ in range(config["timesteps"] + config["future"])])
+        #     for _ in range(config["future"])])
     
     def quantile_parameter(self, h):
         h = torch.split(h, 2, dim=1)
@@ -112,8 +112,8 @@ class ExpLog(nn.Module):
                     _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                     params = self.get_spline(prior_z)
                 
-                theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
-                theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
+                theta1 = torch.cat([torch.cat(params[t][0], dim=1) for t in range(self.config["future"])])
+                theta2 = torch.cat([torch.cat(params[t][1], dim=1) for t in range(self.config["future"])])
                 
                 alpha = (torch.ones(theta1.shape) * a).to(self.device)
                 
@@ -134,8 +134,8 @@ class ExpLog(nn.Module):
                 _, prior_z, _, _ = self.get_prior(test_context.to(self.device))
                 params = self.get_spline(prior_z)
             
-            theta1 = torch.cat([torch.cat(params[self.config["timesteps"]+t][0], dim=1) for t in range(self.config["future"])])
-            theta2 = torch.cat([torch.cat(params[self.config["timesteps"]+t][1], dim=1) for t in range(self.config["future"])])
+            theta1 = torch.cat([torch.cat(params[t][0], dim=1) for t in range(self.config["future"])])
+            theta2 = torch.cat([torch.cat(params[t][1], dim=1) for t in range(self.config["future"])])
             
             alpha = torch.rand(theta1.shape).to(self.device)
             
