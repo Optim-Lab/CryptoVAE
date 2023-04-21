@@ -129,7 +129,7 @@ class PriorModule(nn.Module):
         self.layer_norm2 = nn.LayerNorm(config["d_model"])
         self.layer_norm3 = nn.LayerNorm(config["d_model"])
 
-        self.add_posit = AddPosition(config["d_model"], config["timesteps"] + config["future"], device)
+        self.add_posit = AddPosition(config["d_model"], config["future"], device)
         
     def forward(self, h_C, prior_W=None):
         w = self.w0.repeat(h_C.size(0), 1, 1)
@@ -139,7 +139,7 @@ class PriorModule(nn.Module):
         mean_list = []
         logvar_list = []
         
-        for i in range(self.config["timesteps"] + self.config["future"]):
+        for i in range(self.config["future"]):
             if prior_W == None:
                 w_bar = self.layer_norm1(w[:, i:i+1, :] + self.mha1(w[:, i:i+1, :], w[:, :i+1, :], w[:, :i+1, :]))
             else:
@@ -185,7 +185,7 @@ class PosteriorModule(nn.Module):
         
         k = self.mha(h_T, h_T, h_T)
         
-        for i in range(self.config["timesteps"] + self.config["future"]):
+        for i in range(self.config["future"]):
             if prior_W == None:
                 w_bar = self.prior.layer_norm1(w[:, i:i+1, :] + self.prior.mha1(w[:, i:i+1, :], w[:, :i+1, :], w[:, :i+1, :]))
             else:

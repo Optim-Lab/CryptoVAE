@@ -31,18 +31,18 @@ class LSQF(nn.Module):
 
         """Inference model"""
         self.fc_T = nn.Linear(config["p"], config["d_model"])
-        self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
+        self.add_posit_T = layers.AddPosition2(config["d_model"], config["future"], device)
         self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
         
         self.spline = nn.ModuleList(
             [nn.Linear(config["d_latent"], (1 + (config["M"] + 1)) * config["p"])
-             for _ in range(config["timesteps"] + config["future"])])
+             for _ in range(config["future"])])
         # self.spline = nn.ModuleList(
         #     [nn.Sequential(
         #         nn.Linear(config["d_latent"], 32),
         #         nn.ELU(),
         #         nn.Linear(32, (1 + (config["M"] + 1)) * config["p"])) 
-        #     for _ in range(config["timesteps"] + config["future"])])
+        #     for _ in range(config["future"])])
     
     def quantile_parameter(self, h):
         h = torch.split(h, 1 + (self.M + 1), dim=1)
@@ -141,9 +141,9 @@ class LSQF(nn.Module):
                 
                 Qs_tmp = []
                 for j in range(self.config["p"]):
-                    gamma = torch.cat([params[self.config["timesteps"]+t][0][j] for t in range(self.config["future"])], dim=0)
-                    beta = torch.cat([params[self.config["timesteps"]+t][1][j] for t in range(self.config["future"])], dim=0)
-                    delta = torch.cat([params[self.config["timesteps"]+t][2][j] for t in range(self.config["future"])], dim=0)
+                    gamma = torch.cat([params[t][0][j] for t in range(self.config["future"])], dim=0)
+                    beta = torch.cat([params[t][1][j] for t in range(self.config["future"])], dim=0)
+                    delta = torch.cat([params[t][2][j] for t in range(self.config["future"])], dim=0)
                     
                     alpha = (torch.ones(gamma.shape) * a).to(self.device)
                     
@@ -167,9 +167,9 @@ class LSQF(nn.Module):
             
             Qs_tmp = []
             for j in range(self.config["p"]):
-                gamma = torch.cat([params[self.config["timesteps"]+t][0][j] for t in range(self.config["future"])], dim=0)
-                beta = torch.cat([params[self.config["timesteps"]+t][1][j] for t in range(self.config["future"])], dim=0)
-                delta = torch.cat([params[self.config["timesteps"]+t][2][j] for t in range(self.config["future"])], dim=0)
+                gamma = torch.cat([params[t][0][j] for t in range(self.config["future"])], dim=0)
+                beta = torch.cat([params[t][1][j] for t in range(self.config["future"])], dim=0)
+                delta = torch.cat([params[t][2][j] for t in range(self.config["future"])], dim=0)
                 
                 alpha = torch.rand(gamma.shape).to(self.device)
                 

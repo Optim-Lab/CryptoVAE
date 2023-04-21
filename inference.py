@@ -55,8 +55,8 @@ def get_args(debug):
     
     parser.add_argument("--num", default=0, type=int,
                         help="XXX")
-    parser.add_argument('--model', type=str, default='GLD_finite', 
-                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
+    parser.add_argument('--model', type=str, default='GLD_infinite', 
+                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     parser.add_argument("--future", default=5, type=int,
@@ -95,7 +95,10 @@ def main():
     
     colnames = df.columns
     config["p"] = df.shape[1]
-    train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
+    if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
+        train_list, test_list = utils.build_datasets2(df, config["test_len"], config["increment"], config)
+    else: # reconstruct only T - C
+        train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
     #%%
     try:
         model_module = importlib.import_module('modules.{}'.format(config["model"]))
@@ -135,6 +138,9 @@ def main():
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Quantile Estimation"""
+    # Get maximum for normalization
+    maxvalues = [test[1].reshape(-1, config["p"]).max(dim=0, keepdims=True).values for test in test_list]
+    
     alphas = [0.1, 0.5, 0.9]
     phaseQ = []
     for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
@@ -146,33 +152,54 @@ def main():
             est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
         phaseQ.append(est_quantiles)
         print()
-        """Vrate and Hit"""
-        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        
+        if config["model"] in ["TLAE", "ProTran"]:
+            test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        else:
+            test_target_ = test_target.reshape(-1, config["p"])
+        
+        """DICR"""
         est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
-        for i, a in enumerate(alphas):
-            vrate = (test_target_ < est_quantiles_[i]).to(torch.float32).mean(dim=0)
-            hit = (a - vrate).abs()
-            print(f'[Phase{j+1}] Vrate({a}): {vrate.mean():.3f},', f'Hit({a}): {hit.mean():.3f}')
-            wandb.log({f'[Phase{j+1}] Vrate({a})': vrate.mean().item()})
-            wandb.log({f'[Phase{j+1}] Hit({a})': hit.mean().item()})
-            for c, v, h in zip(colnames, vrate, hit):
-                print(f'[Phase{j+1}, {c}] Vrate({a}): {v:.3f},', f'Hit({a}): {h:.3f}')
-                wandb.log({f'[Phase{j+1}, {c}] Vrate({a})': v.item()})
-                wandb.log({f'[Phase{j+1}, {c}] Hit({a})': h.item()})
-            print()
+        CR = ((est_quantiles_[0] < test_target_) * (test_target_ < est_quantiles_[-1])).to(torch.float32).mean(dim=0)
+        DICR = (CR - (alphas[-1] - alphas[0])).abs()
+        print(f'[Phase{j+1}] DICR: {DICR.mean():.3f},')
+        wandb.log({f'[Phase{j+1}] DICR': DICR.mean().item()})
+        for c, v in zip(colnames, DICR):
+            print(f'[Phase{j+1}, {c}] DICR: {v:.3f},')
+            wandb.log({f'[Phase{j+1}, {c}] DICR': v.item()})
         print()
         """Quantile loss"""
-        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
-        est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
         for i, a in enumerate(alphas):
             u = test_target_ - est_quantiles_[i]
-            QL = ((a - (u < 0).to(torch.float32)) * u).mean(dim=0)
+            QL = (((a - (u < 0).to(torch.float32)) * u) / maxvalues[j]).mean(dim=0) # normalized QL
             print(f'[Phase{j+1}] QL({a}): {QL.mean():.3f}')
             wandb.log({f'[Phase{j+1}] QL({a})': QL.mean().item()})
             for c, q in zip(colnames, QL):
                 print(f'[Phase{j+1}, {c}] QL({a}): {q:.3f}')
                 wandb.log({f'[Phase{j+1}, {c}] QL({a})': q.item()})
             print()
+    #%%
+    """CRPS: Proposal model & TLAE"""
+    for j, (test_context, test_target) in enumerate(test_list):
+        print(f"\nPhase {j+1} CRPS...\n")
+
+        if config["model"] in ["TLAE", "ProTran"]:
+            _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
+            test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        else:
+            samples = model[j].sampling(test_context, config["MC"])
+            test_target_ = test_target.reshape(-1, config["p"])
+        
+        term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
+        term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
+        CRPS = ((term1 - term2) / maxvalues[j]).mean(dim=0) # normalized CRPS
+        print()
+        print(f'[Phase{j+1}] CRPS: {CRPS.mean():.3f}')
+        wandb.log({f'[Phase{j+1}] CRPS': CRPS.mean().item()})
+        for c, q in zip(colnames, CRPS):
+            print(f'[Phase{j+1}, {c}] CRPS: {q:.3f}')
+            wandb.log({f'[Phase{j+1}, {c}] CRPS': q.item()})
+        print()
     #%%
     """Visualize"""
     estQ = []
@@ -181,7 +208,10 @@ def main():
     estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in estQ]
     
     target = torch.cat([train_list[-1][1], test_list[-1][1]], dim=0)
-    target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    if config["model"] in ["TLAE", "ProTran"]:
+        target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    else:
+        target_ = target[::config["future"], :, :].reshape(-1, config["p"])
     start_idx = train_list[0][0].shape[0]
     
     figs = utils.visualize_quantile(
@@ -190,28 +220,6 @@ def main():
         show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
-    #%%
-    """CRPS: Proposal model & TLAE"""
-    for j, (test_context, test_target) in enumerate(test_list):
-        print(f"\nPhase {j+1} CRPS...\n")
-
-        if config["model"] in ["TLAE", "ProTran"]:
-            _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
-        else:
-            samples = model[j].sampling(test_context, config["MC"])
-        
-        test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
-        
-        term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
-        term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
-        CRPS = (term1 - term2).mean(dim=0)
-        print()
-        print(f'[Phase{j+1}] CRPS: {CRPS.mean():.3f}')
-        wandb.log({f'[Phase{j+1}] CRPS': CRPS.mean().item()})
-        for c, q in zip(colnames, CRPS):
-            print(f'[Phase{j+1}, {c}] CRPS: {q:.3f}')
-            wandb.log({f'[Phase{j+1}, {c}] CRPS': q.item()})
-        print()
     #%%
     wandb.run.finish()
 #%%
