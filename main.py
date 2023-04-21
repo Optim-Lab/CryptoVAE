@@ -138,7 +138,10 @@ def main():
     
     colnames = df.columns
     config["p"] = df.shape[1]
-    train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
+    if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
+        train_list, test_list = utils.build_datasets2(df, config["test_len"], config["increment"], config)
+    else: # reconstruct only T - C
+        train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
     #%%
     """model"""
     try:

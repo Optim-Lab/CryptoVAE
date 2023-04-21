@@ -66,6 +66,46 @@ def build_datasets(df, test_len, increment, config):
         test_list.append((test_context, test_target))
     return train_list, test_list
 #%%
+def stock_data_generator2(df, C, tau):
+    n = df.shape[0] - C - tau
+        
+    # T = C + tau
+    input_data = np.zeros((n, C, df.shape[1]))
+    infer_data = np.zeros((n, C+tau, df.shape[1]))
+
+    for i in range(n):
+        input_data[i, :, :] = df.iloc[i : i+C, :]
+        infer_data[i, :, :] = df.iloc[i : i+C+tau, :]
+    
+    input_data = torch.from_numpy(input_data).to(torch.float32)
+    infer_data = torch.from_numpy(infer_data).to(torch.float32)
+    return input_data, infer_data
+#%%
+def build_datasets2(df, test_len, increment, config):
+    train_list = []
+    test_list = []
+    for j in range(increment):
+        train_idx_last = len(df) - test_len * (increment - j)
+        test_idx_last = len(df) - test_len * (increment - 1 - j)
+        train = df.iloc[: train_idx_last]
+        test = df.iloc[-(test_len * (increment - j) + config["timesteps"] + config["future"]) : test_idx_last]
+        
+        """data save"""
+        train.to_csv(f'./assets/{config["model"]}/{config["data"]}_future{config["future"]}_phase{j+1}_train.csv')
+        test.to_csv(f'./assets/{config["model"]}/{config["data"]}_future{config["future"]}_phase{j+1}_test.csv')
+        
+        train_context, train_target = stock_data_generator2(train, config["timesteps"], config["future"])
+        test_context, test_target = stock_data_generator2(test, config["timesteps"], config["future"])
+        
+        assert train_context.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+        assert train_target.shape == (train.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+        assert test_context.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"], df.shape[1])
+        assert test_target.shape == (test.shape[0] - config["timesteps"] - config["future"], config["timesteps"] + config["future"], df.shape[1])
+        
+        train_list.append((train_context, train_target))
+        test_list.append((test_context, test_target))
+    return train_list, test_list
+#%%
 def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
