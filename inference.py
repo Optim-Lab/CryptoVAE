@@ -56,7 +56,7 @@ def get_args(debug):
     parser.add_argument("--num", default=0, type=int,
                         help="XXX")
     parser.add_argument('--model', type=str, default='GLD_infinite', 
-                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE')
+                        help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     parser.add_argument("--future", default=5, type=int,
@@ -153,7 +153,10 @@ def main():
         phaseQ.append(est_quantiles)
         print()
         
-        test_target_ = test_target.reshape(-1, config["p"])
+        if config["model"] in ["TLAE", "ProTran"]:
+            test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
+        else:
+            test_target_ = test_target.reshape(-1, config["p"])
         
         """DICR"""
         est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
