@@ -55,7 +55,7 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=1, 
                         help='seed for repeatable results')
-    parser.add_argument('--model', type=str, default='GLD_finite', 
+    parser.add_argument('--model', type=str, default='GLD_infinite', 
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
@@ -211,10 +211,10 @@ def main():
 
         if config["model"] in ["TLAE", "ProTran"]:
             _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
+            test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
         else:
             samples = model[j].sampling(test_context, config["MC"])
-        
-        test_target_ = test_target.reshape(-1, config["p"])
+            test_target_ = test_target.reshape(-1, config["p"])
         
         term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
         term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
@@ -229,7 +229,10 @@ def main():
     estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in estQ]
     
     target = torch.cat([train_list[-1][1], test_list[-1][1]], dim=0)
-    target_ = target[::config["future"], :, :].reshape(-1, config["p"])
+    if config["model"] in ["TLAE", "ProTran"]:
+        target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+    else:
+        target_ = target[::config["future"], :, :].reshape(-1, config["p"])
     start_idx = train_list[0][0].shape[0]
     
     figs = utils.visualize_quantile(
