@@ -72,6 +72,54 @@ class PriorModule(nn.Module):
         
         return w_list, z_list, mean_list, logvar_list
 #%%
+class PosteriorModule(nn.Module):
+    def __init__(self, config, prior, device):
+        super(PosteriorModule, self).__init__()
+        self.config = config
+        self.device = device
+        
+        self.prior = prior
+        self.mha = layers.MultiHeadAttention(config, device)
+        self.fc1 = nn.Linear(config["d_model"] * 2, config["d_latent"] * 2)
+        self.fc2 = nn.Linear(config["d_latent"], config["d_model"])
+        
+    def forward(self, h_C, h_T, prior_W=None):
+        w = self.prior.w0.repeat(h_T.size(0), 1, 1)
+        
+        w_list = []
+        z_list = []
+        mean_list = []
+        logvar_list = []
+        
+        k = self.mha(h_T, h_T, h_T)
+        
+        for i in range(self.config["timesteps"] + self.config["future"]):
+            if prior_W == None:
+                w_bar = self.prior.layer_norm1(w[:, i:i+1, :] + self.prior.mha1(w[:, i:i+1, :], w[:, :i+1, :], w[:, :i+1, :]))
+            else:
+                w_tilde = self.prior.layer_norm3(w[:, i:i+1, :] + self.prior.mha3(w[:, i:i+1, :], prior_W, prior_W))
+                w_bar = self.prior.layer_norm1(w_tilde + self.prior.mha1(w_tilde, w[:, :i+1, :], w[:, :i+1, :]))
+                
+            w_hat = self.prior.layer_norm2(w_bar + self.prior.mha2(w_bar, h_C, h_C))
+            
+            w_hat_k = torch.cat([w_hat, k[:, [i], :]], dim=2)
+            # k = self.mha(h_T[:, i:i+1, :], h_T[:, :i+1, :], h_T[:, :i+1, :])
+            # w_hat_k = torch.cat([w_hat, k], dim=2)
+
+            mean, logvar = torch.split(self.fc1(w_hat_k), self.config["d_latent"], dim=2)
+            epsilon = torch.randn(mean.shape).to(self.device)
+            z = mean + torch.exp(logvar / 2) * epsilon
+            
+            w_hat = self.prior.add_posit(w_hat + self.fc2(z), i)
+            w = torch.cat([w, w_hat], dim=1)
+
+            w_list.append(w_hat)
+            z_list.append(z.squeeze(1)) 
+            mean_list.append(mean.squeeze(1))
+            logvar_list.append(logvar.squeeze(1))
+                           
+        return w_list, z_list, mean_list, logvar_list
+#%%
 class ProTran(nn.Module):
     def __init__(self, config, device):
         super(ProTran, self).__init__()
@@ -87,7 +135,7 @@ class ProTran(nn.Module):
         """Inference model"""
         self.fc_T = nn.Linear(config["p"], config["d_model"])
         self.add_posit_T = layers.AddPosition2(config["d_model"], config["timesteps"] + config["future"], device)
-        self.posterior = layers.PosteriorModule(self.config, self.prior, device) 
+        self.posterior = PosteriorModule(self.config, self.prior, device) 
         
         self.decoder = nn.ModuleList(
             [nn.Linear(config["d_latent"], config["p"])
