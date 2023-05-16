@@ -106,49 +106,49 @@ def build_datasets2(df, test_len, increment, config):
         test_list.append((test_context, test_target))
     return train_list, test_list
 #%%
-def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
-    # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    mpl.rcParams["figure.dpi"] = 200
-    mpl_style(dark=dark)
-    SMALL_SIZE = 10
-    BIGGER_SIZE = 18
+# def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
+#     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+#     mpl.rcParams["figure.dpi"] = 200
+#     mpl_style(dark=dark)
+#     SMALL_SIZE = 10
+#     BIGGER_SIZE = 18
 
-    plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-    plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
-    plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
-    plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-    plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-    plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
-    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+#     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+#     plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
+#     plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+#     plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+#     plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+#     plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
+#     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
     
-    figs = []
-    for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
-        fig = plt.figure(figsize=(12, 7))   
-        conf = plt.fill_between(
-            np.arange(start_idx, target_.shape[0]), 
-            estQ[0][:, j].numpy(), 
-            estQ[2][:, j].numpy(), 
-            color='blue', alpha=0.3, label=r'80% interval')
-        plt.plot(
-            target_.numpy()[:, j],
-            label=colnames[j], color='black', linestyle='--', linewidth=2)
-        plt.plot(
-            np.arange(start_idx, target_.shape[0]),
-            estQ[1][:, j].numpy(),
-            label='Median', color='green', linewidth=2)
-        plt.axvline(x=start_idx, color='blue', linewidth=2)
-        plt.axvline(x=start_idx + test_len, color='blue', linewidth=2)
-        plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
-        plt.xlabel('Date', fontsize=18)
-        plt.ylabel('Price', fontsize=18)
-        plt.legend(loc = 'upper left')
-        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
-        if show:
-            plt.show()
-        # plt.show()
-        plt.close()
-        figs.append(fig)
-    return figs
+#     figs = []
+#     for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
+#         fig = plt.figure(figsize=(12, 7))   
+#         conf = plt.fill_between(
+#             np.arange(start_idx, target_.shape[0]), 
+#             estQ[0][:, j].numpy(), 
+#             estQ[2][:, j].numpy(), 
+#             color='blue', alpha=0.3, label=r'80% interval')
+#         plt.plot(
+#             target_.numpy()[:, j],
+#             label=colnames[j], color='black', linestyle='--', linewidth=2)
+#         plt.plot(
+#             np.arange(start_idx, target_.shape[0]),
+#             estQ[1][:, j].numpy(),
+#             label='Median', color='green', linewidth=2)
+#         plt.axvline(x=start_idx, color='blue', linewidth=2)
+#         plt.axvline(x=start_idx + test_len, color='blue', linewidth=2)
+#         plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
+#         plt.xlabel('Date', fontsize=18)
+#         plt.ylabel('Price', fontsize=18)
+#         plt.legend(loc = 'upper left')
+#         plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
+#         if show:
+#             plt.show()
+#         # plt.show()
+#         plt.close()
+#         figs.append(fig)
+#     return figs
 
 def visualize_quantile(target_, estQ, start_idx, colnames, test_len, show=False, dark=False):
     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -165,8 +165,8 @@ def visualize_quantile(target_, estQ, start_idx, colnames, test_len, show=False,
     plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
     
-    xticks = [37, 251, 463, 677, 890, 1105, 1317, 1529, 1743, 1894]
-    xtick_labels = ["2018.03", "2018.10", "2019.05", "2019.12", "2020.07", "2021.02", "2021.09", "2022.04", "2022.11", "2023.04"]
+    xticks = [37-20, 251-20, 463-20, 677-20, 890-20, 1105-20, 1317-20, 1529-20, 1743-20]
+    xtick_labels = ["2018.03", "2018.10", "2019.05", "2019.12", "2020.07", "2021.02", "2021.09", "2022.04", "2022.11"]
         
     figs = []
     for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
