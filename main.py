@@ -136,7 +136,7 @@ def main():
     )
     print(df.describe())
     
-    colnames = df.columns
+    colnames = [col.replace("KRW-", "") for col in df.columns.to_list()]
     config["p"] = df.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
         train_list, test_list = utils.build_datasets2(df, config["test_len"], config["increment"], config)
