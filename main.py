@@ -61,29 +61,29 @@ def get_args(debug):
                         help='Fitting model options: crypto')
     
     parser.add_argument("--d_latent", default=16, type=int,
-                        help="XXX")
+                        help="size of latent dimension")
     parser.add_argument("--d_model", default=8, type=int,
-                        help="XXX")
-    parser.add_argument("--timesteps", default=20, type=int, # equals to C
-                        help="XXX")
-    parser.add_argument("--future", default=5, type=int, # equals to T - C
-                        help="XXX")
+                        help="size of transformer model dimension")
     parser.add_argument("--num_heads", default=1, type=int,
-                        help="XXX")
+                        help="the number of heads in transformer")
     parser.add_argument("--num_layer", default=1, type=int,
-                        help="XXX")
+                        help="the number of layers in transformer")
     parser.add_argument("--M", default=10, type=int,
-                        help="XXX")
+                        help="the number of knot points")
     parser.add_argument("--K", default=20, type=int,
-                        help="XXX")
+                        help="the number of quantiles to estimate")
     
+    parser.add_argument("--timesteps", default=20, type=int, # equals to C
+                        help="the number of conditional time steps")
+    parser.add_argument("--future", default=5, type=int, # equals to T - C
+                        help="the number of time steps to forecasting")
     parser.add_argument("--test_len", default=200, type=int,
-                        help="XXX")
+                        help="length of test dataset in each phase")
     parser.add_argument("--increment", default=3, type=int,
-                        help="XXX")
+                        help="the number of phase")
     
     parser.add_argument("--MC", default=100, type=int,
-                        help="XXX")
+                        help="the number of samples in Monte Carlo sampling")
     parser.add_argument('--epochs', default=400, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,

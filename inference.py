@@ -54,13 +54,13 @@ def get_args(debug):
     parser = argparse.ArgumentParser('parameters')
     
     parser.add_argument("--num", default=0, type=int,
-                        help="XXX")
+                        help="the number of model")
     parser.add_argument('--model', type=str, default='GLD_infinite', 
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='crypto', 
                         help='Fitting model options: crypto')
     parser.add_argument("--future", default=5, type=int,
-                        help="XXX")
+                        help="the number of time steps to forecasting")
     if debug:
         return parser.parse_args(args=[])
     else:    
@@ -215,10 +215,10 @@ def main():
     start_idx = train_list[0][0].shape[0]
     
     figs = utils.visualize_quantile(
-        target_, estQ, start_idx, colnames, config["test_len"], config,
-        path=plots_dir,
+        target_, estQ, start_idx, colnames, config["test_len"], 
         show=False, dark=False)
     for j in range(len(colnames)):
+        figs[j].savefig(f'{plots_dir}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     wandb.run.finish()
