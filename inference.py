@@ -202,6 +202,9 @@ def main():
         print()
     #%%
     """Visualize"""
+    # remove "KRW-" in column names
+    colnames = [x.replace("KRW-", "") for x in colnames]
+    
     estQ = []
     for j in range(len(alphas)):
         estQ.append(torch.cat([phaseQ[i][j] for i in range(len(phaseQ))], dim=0))
