@@ -150,7 +150,7 @@ def build_datasets2(df, test_len, increment, config):
 #         figs.append(fig)
 #     return figs
 
-def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
+def visualize_quantile(target_, estQ, colnames, test_len, config, path, show=False, dark=False):
      # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
@@ -164,10 +164,10 @@ def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, pat
     plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
     
-    if tau == 1:
+    if config["future"] == 1:
         start_idx = 1279
         shift = 0
-    elif tau == 5:
+    elif config["future"] == 5:
         start_idx = 1275        
         shift = -4
     
