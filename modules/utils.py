@@ -150,7 +150,7 @@ def build_datasets2(df, test_len, increment, config):
 #         figs.append(fig)
 #     return figs
 
-def visualize_quantile(target_, estQ, start_idx, colnames, test_len, show=False, dark=False):
+def visualize_quantile(target_, estQ, tau, colnames, test_len, show=False, dark=False):
     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
@@ -165,9 +165,16 @@ def visualize_quantile(target_, estQ, start_idx, colnames, test_len, show=False,
     plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
     
-    xticks = [37-20, 251-20, 463-20, 677-20, 890-20, 1105-20, 1317-20, 1529-20, 1743-20]
+    if tau == 1:
+        start_idx = 1279
+        shift = 0
+    elif tau == 5:
+        start_idx = 1275        
+        shift = -4
+    
+    xticks = [17+shift, 231+shift, 443+shift, 657+shift, 870+shift, 1085+shift, 1297+shift, 1509+shift, 1723+shift]
     xtick_labels = ["2018.03", "2018.10", "2019.05", "2019.12", "2020.07", "2021.02", "2021.09", "2022.04", "2022.11"]
-        
+    
     figs = []
     for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
         fig = plt.figure(figsize=(12, 7))   
@@ -188,26 +195,26 @@ def visualize_quantile(target_, estQ, start_idx, colnames, test_len, show=False,
         plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
         plt.xlabel('Date', fontsize=18)
         plt.ylabel('Price', fontsize=18)
-        plt.ylim(0, target_.numpy()[:, j].max()+1)
-        plt.text(1300, target_.numpy()[:, j].max()+0.5,"Phase 1", color='black', fontsize=16)
-        plt.text(1500, target_.numpy()[:, j].max()+0.5,"Phase 2", color='black', fontsize=16)
-        plt.text(1700, target_.numpy()[:, j].max()+0.5,"Phase 3", color='black', fontsize=16)
+        plt.ylim(0, target_.numpy()[:, j].max()+1.5)
+        plt.text(1300+shift, target_.numpy()[:, j].max()+0.5,"Phase 1", color='black', fontsize=16)
+        plt.text(1500+shift, target_.numpy()[:, j].max()+0.5,"Phase 2", color='black', fontsize=16)
+        plt.text(1700+shift, target_.numpy()[:, j].max()+0.5,"Phase 3", color='black', fontsize=16)
         plt.xticks(xticks, xtick_labels, rotation=20)
         plt.annotate("",
-            xy=(1280, target_.numpy()[:, j].max()+0.35),
-            xytext=(1480, target_.numpy()[:, j].max()+0.35),
+            xy=(1280+shift, target_.numpy()[:, j].max()+0.35),
+            xytext=(1480+shift, target_.numpy()[:, j].max()+0.35),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.annotate("",
-            xy=(1480, target_.numpy()[:, j].max()+0.35),
-            xytext=(1680, target_.numpy()[:, j].max()+0.35),
+            xy=(1480+shift, target_.numpy()[:, j].max()+0.35),
+            xytext=(1680+shift, target_.numpy()[:, j].max()+0.35),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.annotate("",
-            xy=(1680, target_.numpy()[:, j].max()+0.35),
-            xytext=(1880, target_.numpy()[:, j].max()+0.35),
+            xy=(1680+shift, target_.numpy()[:, j].max()+0.35),
+            xytext=(1880+shift, target_.numpy()[:, j].max()+0.35),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
