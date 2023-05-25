@@ -154,8 +154,8 @@ def visualize_quantile(target_, estQ, colnames, test_len, config, path, show=Fal
      # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
-    SMALL_SIZE = 10
-    BIGGER_SIZE = 18
+    SMALL_SIZE = 16
+    BIGGER_SIZE = 20
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
     plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
     plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
@@ -192,37 +192,40 @@ def visualize_quantile(target_, estQ, colnames, test_len, config, path, show=Fal
         plt.axvline(x=start_idx, color='blue', linewidth=2)
         plt.axvline(x=start_idx + test_len, color='blue', linewidth=2)
         plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
-        plt.xlabel('Date', fontsize=18)
-        plt.ylabel('Price', fontsize=18)
+        # plt.xlabel('Date', fontsize=18)
+        plt.ylabel('Price', fontsize=BIGGER_SIZE)
         plt.ylim(0, target_.numpy()[:, j].max()+1.5)
-        plt.text(1300+shift, target_.numpy()[:, j].max()+0.5,"Phase 1", color='black', fontsize=16)
-        plt.text(1500+shift, target_.numpy()[:, j].max()+0.5,"Phase 2", color='black', fontsize=16)
-        plt.text(1700+shift, target_.numpy()[:, j].max()+0.5,"Phase 3", color='black', fontsize=16)
+        plt.text(1295+shift, target_.numpy()[:, j].max()+0.3,"Phase 1", color='black', fontsize=19)
+        plt.text(1495+shift, target_.numpy()[:, j].max()+0.3,"Phase 2", color='black', fontsize=19)
+        plt.text(1695+shift, target_.numpy()[:, j].max()+0.3,"Phase 3", color='black', fontsize=19)
         plt.xticks(xticks, xtick_labels, rotation=20)
         plt.annotate("",
-            xy=(1280+shift, target_.numpy()[:, j].max()+0.35),
-            xytext=(1480+shift, target_.numpy()[:, j].max()+0.35),
+            xy=(1280+shift, target_.numpy()[:, j].max()+0.05),
+            xytext=(1480+shift, target_.numpy()[:, j].max()+0.05),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.annotate("",
-            xy=(1480+shift, target_.numpy()[:, j].max()+0.35),
-            xytext=(1680+shift, target_.numpy()[:, j].max()+0.35),
+            xy=(1480+shift, target_.numpy()[:, j].max()+0.05),
+            xytext=(1680+shift, target_.numpy()[:, j].max()+0.05),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.annotate("",
-            xy=(1680+shift, target_.numpy()[:, j].max()+0.35),
-            xytext=(1880+shift, target_.numpy()[:, j].max()+0.35),
+            xy=(1680+shift, target_.numpy()[:, j].max()+0.05),
+            xytext=(1880+shift, target_.numpy()[:, j].max()+0.05),
             va="center",
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.legend(loc = 'upper left')
+        plt.tight_layout()
         plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         if show:
             plt.show()
         # plt.show()
+        
         plt.close()
+        
         figs.append(fig)
     return figs
 #%%
