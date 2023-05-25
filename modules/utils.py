@@ -150,13 +150,12 @@ def build_datasets2(df, test_len, increment, config):
 #         figs.append(fig)
 #     return figs
 
-def visualize_quantile(target_, estQ, tau, colnames, test_len, show=False, dark=False):
-    # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+def visualize_quantile(target_, estQ, start_idx, colnames, test_len, config, path, show=False, dark=False):
+     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     mpl.rcParams["figure.dpi"] = 200
     mpl_style(dark=dark)
     SMALL_SIZE = 10
     BIGGER_SIZE = 18
-
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
     plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
     plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
@@ -219,6 +218,7 @@ def visualize_quantile(target_, estQ, tau, colnames, test_len, show=False, dark=
             ha="center",
             arrowprops=dict(color='black', arrowstyle="<->"))
         plt.legend(loc = 'upper left')
+        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
         if show:
             plt.show()
         # plt.show()
