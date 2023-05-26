@@ -86,6 +86,12 @@ def main():
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
     #%%
+    if not os.path.exists('./assets/{}'.format(config["model"])):
+        os.makedirs('./assets/{}'.format(config["model"]))
+        
+    plots_dir = f'./assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
+    if not os.path.exists(plots_dir): os.makedirs(plots_dir)
+    #%%
     """train, test split"""
     df = pd.read_csv(
         f'./data/{config["data"]}.csv',
@@ -130,12 +136,6 @@ def main():
     num_params = count_parameters(model[0])
     print("Number of Parameters:", num_params)
     wandb.log({'Number of Parameters': num_params})
-    #%%
-    if not os.path.exists('./assets/{}'.format(config["model"])):
-        os.makedirs('./assets/{}'.format(config["model"]))
-        
-    plots_dir = f'./assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
-    if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Quantile Estimation"""
     # Get maximum for normalization
@@ -218,7 +218,7 @@ def main():
     start_idx = train_list[0][0].shape[0]
     
     figs = utils.visualize_quantile(
-        target_, estQ, start_idx, colnames, config["test_len"], 
+        target_, estQ, colnames, config["test_len"], config, plots_dir,
         show=False, dark=False)
     for j in range(len(colnames)):
         figs[j].savefig(f'{plots_dir}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
