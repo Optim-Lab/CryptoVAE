@@ -161,13 +161,22 @@ def main():
         """DICR"""
         est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
         CR = ((est_quantiles_[0] < test_target_) * (test_target_ < est_quantiles_[-1])).to(torch.float32).mean(dim=0)
+        INTERVAL = ((est_quantiles_[-1] - est_quantiles_[0]) / maxvalues[j]).mean(dim=0)
         DICR = (CR - (alphas[-1] - alphas[0])).abs()
+        
+        print(f'[Phase{j+1}] INTERVAL: {INTERVAL.mean():.3f},')
         print(f'[Phase{j+1}] DICR: {DICR.mean():.3f},')
+        wandb.log({f'[Phase{j+1}] INTERVAL': INTERVAL.mean().item()})
         wandb.log({f'[Phase{j+1}] DICR': DICR.mean().item()})
-        for c, v in zip(colnames, DICR):
-            print(f'[Phase{j+1}, {c}] DICR: {v:.3f},')
-            wandb.log({f'[Phase{j+1}, {c}] DICR': v.item()})
+        for c, x in zip(colnames, INTERVAL):
+            print(f'[Phase{j+1}, {c}] INTERVAL: {x:.3f},')
+            wandb.log({f'[Phase{j+1}, {c}] INTERVAL': x.item()})
         print()
+        for c, x in zip(colnames, DICR):
+            print(f'[Phase{j+1}, {c}] DICR: {x:.3f},')
+            wandb.log({f'[Phase{j+1}, {c}] DICR': x.item()})
+        print()
+        
         """Quantile loss"""
         for i, a in enumerate(alphas):
             u = test_target_ - est_quantiles_[i]
