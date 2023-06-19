@@ -176,6 +176,10 @@ def main():
             print(f'[Phase{j+1}, {c}] DICR: {x:.3f},')
             wandb.log({f'[Phase{j+1}, {c}] DICR': x.item()})
         print()
+        print(f'[Phase{j+1}] INTERVAL: {INTERVAL.std():.3f},')
+        print(f'[Phase{j+1}] DICR: {DICR.std():.3f},')
+        wandb.log({f'[Phase{j+1}] INTERVAL(STD)': INTERVAL.std().item()})
+        wandb.log({f'[Phase{j+1}] DICR(STD)': DICR.std().item()})
         
         """Quantile loss"""
         for i, a in enumerate(alphas):
@@ -187,6 +191,8 @@ def main():
                 print(f'[Phase{j+1}, {c}] QL({a}): {q:.3f}')
                 wandb.log({f'[Phase{j+1}, {c}] QL({a})': q.item()})
             print()
+            print(f'[Phase{j+1}] QL({a})(STD): {QL.std():.3f}')
+            wandb.log({f'[Phase{j+1}] QL({a})(STD)': QL.std().item()})
     #%%
     """CRPS: Proposal model & TLAE"""
     for j, (test_context, test_target) in enumerate(test_list):
@@ -209,6 +215,8 @@ def main():
             print(f'[Phase{j+1}, {c}] CRPS: {q:.3f}')
             wandb.log({f'[Phase{j+1}, {c}] CRPS': q.item()})
         print()
+        print(f'[Phase{j+1}] CRPS(STD): {CRPS.std():.3f}')
+        wandb.log({f'[Phase{j+1}] CRPS(STD)': CRPS.std().item()})
     #%%
     """Visualize"""
     # remove "KRW-" in column names
