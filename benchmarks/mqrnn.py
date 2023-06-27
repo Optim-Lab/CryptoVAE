@@ -4,8 +4,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
+from utils import *
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
@@ -150,3 +152,46 @@ def evaluate(model, loader, criterion, device):
         total_loss.append(loss)
         
         return sum(total_loss)/len(total_loss)
+
+class QuantileRisk(nn.Module):
+    def __init__(self, tau, quantile, num_targets, device):
+        super(QuantileRisk, self).__init__()
+        self.quantile = quantile
+        self.device = device
+        self.q_arr = torch.tensor(self.quantile).float().unsqueeze(0).unsqueeze(-1).repeat(1, 1, tau).unsqueeze(1).repeat(1, num_targets, 1, 1).to(self.device)
+    
+    def forward(self, true, pred):
+        true_rep = true.unsqueeze(-1).repeat(1, 1, 1, len(self.quantile)).permute(0, 2, 3, 1).to(self.device)
+        pred = pred.permute(0, 2, 3, 1)
+
+        ql = torch.maximum(self.q_arr * (true_rep - pred), (1-self.q_arr)*(pred - true_rep))
+        
+        return ql.mean()    
+
+df = pd.read_csv("../data/crypto.csv", index_col=0)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+quanilte_levels = [0.1, 0.5, 0.9]
+
+for tau in [1, 5]:
+    train_list, test_list = build_datasets(df, tau, 200, 3)
+    for i in range(len(train_list)):
+        train_dataset = TensorDataset(*train_list[i])
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=100)
+        mqrnn = MQRnn(
+                d_input=10,
+                d_model=20,
+                tau=tau,
+                num_targets=10,
+                num_quantiles=3,
+                n_layers=3,
+                dr=0.1
+            )
+        
+        mqrnn.to(device)  
+        criterion = QuantileRisk(tau, quanilte_levels, num_targets=10, device=device)  
+        optimizer = optim.Adam(mqrnn.parameters(), lr=0.001)
+        
+        for epoch in tqdm(range(1000)):        
+            train_loss = train(mqrnn, train_loader, criterion, optimizer, device)
+            
+        torch.save(mqrnn.state_dict(), './assets/MQRNN/tau_' + str(tau) + '/MQRNN_PHASE_{}.pth'.format(i+1))

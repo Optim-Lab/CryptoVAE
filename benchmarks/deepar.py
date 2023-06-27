@@ -108,3 +108,35 @@ def train(model, loader, criterion, optimizer, device):
         total_loss.append(loss)
         
     return sum(total_loss)/len(total_loss)
+
+class NegativeGaussianLogLikelihood(nn.Module):
+    def __init__(self, device):
+        super(NegativeGaussianLogLikelihood, self).__init__()
+        import math
+        self.pi = torch.tensor(math.pi).float().to(device)
+        
+    def forward(self, true, pred):
+        mu, sigma = pred
+        return (torch.square(true - mu)/(2*sigma) + torch.log(2*self.pi*sigma)/2).mean()
+
+df = pd.read_csv("../data/data/crypto.csv", index_col=0)
+quanilte_levels = [0.1, 0.5, 0.9]
+
+for tau in [1, 5]:
+    train_list, test_list = build_datasets(df, tau, 200, 3)
+    for i in range(len(train_list)):
+        
+        train_dataset = TensorDataset(*train_list[i])
+        # test_dataset = TensorDataset(*test_list[i])
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=100)
+        # test_loader = DataLoader(test_dataset, shuffle=True, batch_size=10)
+        deepar =  DeepAR(d_input=10, d_model=20, num_targets=10, beta=10, tau=tau)
+        
+        deepar.to(device) 
+        criterion = NegativeGaussianLogLikelihood(device)
+        optimizer = optim.Adam(deepar.parameters(), lr=0.001)
+        
+        for epoch in tqdm(range(1000)):        
+            train_loss = train(deepar, train_loader, criterion, optimizer, device)
+            
+        torch.save(deepar.state_dict(), './assets/DeepAR/tau_' + str(tau) + '/DeepAR_PHASE_{}.pth'.format(i+1))

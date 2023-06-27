@@ -5,8 +5,9 @@ import torch.optim as optim
 
 import pandas as pd
 import numpy as np 
-
+from tqdm import tqdm
 from utils import *
+from torch.utils.data import DataLoader, TensorDataset
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -278,3 +279,48 @@ def evaluate(model, loader, criterion, device):
         total_loss.append(loss)
         
         return sum(total_loss)/len(total_loss) 
+    
+class QuantileRisk(nn.Module):
+    def __init__(self, tau, quantile, num_targets, device):
+        super(QuantileRisk, self).__init__()
+        self.quantile = quantile
+        self.device = device
+        self.q_arr = torch.tensor(self.quantile).float().unsqueeze(0).unsqueeze(-1).repeat(1, 1, tau).unsqueeze(1).repeat(1, num_targets, 1, 1).to(self.device)
+    
+    def forward(self, true, pred):
+        true_rep = true.unsqueeze(-1).repeat(1, 1, 1, len(self.quantile)).permute(0, 2, 3, 1).to(self.device)
+        pred = pred.permute(0, 2, 3, 1)
+
+        ql = torch.maximum(self.q_arr * (true_rep - pred), (1-self.q_arr)*(pred - true_rep))
+        
+        return ql.mean()
+    
+df = pd.read_csv("../data/crypto.csv", index_col=0)
+
+quanilte_levels = [0.1, 0.5, 0.9]
+
+for tau in [1, 5]:
+    train_list, test_list = build_datasets(df, tau, 200, 3)
+    for i in range(len(train_list)):
+        train_dataset = TensorDataset(*train_list[i])
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=100)
+        tft = TemporalFusionTransformer(
+            d_model=20,
+            d_embedding=3,
+            num_var=10,
+            seq_len=20,
+            num_targets=10,
+            tau=5,
+            quantile=quanilte_levels,
+            dr=0.1,
+            device=device
+        )
+        
+        tft.to(device)  
+        criterion = QuantileRisk(1, quanilte_levels, num_targets=10, device=device)  
+        optimizer = optim.Adam(tft.parameters(), lr=0.001)
+        
+        for epoch in tqdm(range(1500)):        
+            train_loss = train(tft, train_loader, criterion, optimizer, device)
+            
+        torch.save(tft.state_dict(), './assets/TFT/tau_' + str(tau) + '/TFT_PHASE_{}.pth'.format(i+1))

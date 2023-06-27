@@ -1,5 +1,14 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+
+from utils import *
+from torch.utils.data import DataLoader, TensorDataset
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
     def __init__(self, d_input, d_model, n_layers=3, dr=0.1):
@@ -75,3 +84,86 @@ class SQF_RNN(nn.Module):
             alpha.unsqueeze(-1) - self.delta,
             torch.zeros(()).to(self.device)
             )).sum(dim=-1, keepdims=True)
+        
+class LinearSplineCRPS(nn.Module):
+    def __init__(self, d_input, device):
+        super(LinearSplineCRPS, self).__init__()
+        self.device = device
+        self.d_input = d_input 
+    
+    def forward(self, true, gamma, beta, delta, alpha_tilde):
+        crps = []
+        for i in range(self.d_input):
+            tmp_crps = (2 * alpha_tilde[:, :, i, :] - 1) * true[..., i:i+1] + (1 - 2 * alpha_tilde[:, :, i, :]) * gamma[:, :, i]
+            tmp_crps += (beta[:, :, i] * ((1 - delta**3)/ 3 - delta - torch.max(alpha_tilde[:, :, i, :], delta.unsqueeze(-2))**2)).sum(-1, keepdims=True)
+            tmp_crps += (beta[:, :, i] * (2 * torch.max(alpha_tilde[:, :, i, :], delta.unsqueeze(-2)) * delta.unsqueeze(-2))).sum(-1, keepdims=True)
+            crps.append(tmp_crps.mean())
+
+        return  sum(crps)/len(crps)
+
+#%%
+def train(model, loader, criterion, optimizer, device):
+    
+    model.train()
+    
+    total_loss = []
+    
+    for batch in loader:
+        batch_input, batch_infer = batch     
+        batch_input = batch_input.to(device)
+        batch_infer = batch_infer.to(device)
+
+        gamma, beta = model(batch_input)
+        alpha_tilde = model.quantile_inverse(batch_infer, gamma, beta)
+
+        loss = criterion(batch_infer, gamma, beta, model.delta, alpha_tilde)
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        total_loss.append(loss)
+        
+    return sum(total_loss)/len(total_loss)
+    
+def evaluate(model, loader, criterion, device):
+    model.eval()
+    
+    total_loss = []
+    
+    for batch in loader:
+        batch_input, batch_infer = batch 
+        
+        batch_input = batch_input.to(device)
+        batch_infer = batch_infer.to(device)
+        
+        gamma, beta = model(batch_input)
+        alpha_tilde = model.quantile_inverse(batch_input, gamma, beta)
+        
+        loss = criterion(batch_infer, gamma, beta, model.delta, alpha_tilde)
+        
+        total_loss.append(loss)
+        
+        return sum(total_loss)/len(total_loss)
+
+df = pd.read_csv("../data/crypto.csv", index_col=0)
+
+for tau in [1, 5]:
+    train_list, test_list = build_datasets(df, tau, 200, 3)
+
+    for i in range(len(train_list)):
+        train_input, train_infer = train_list[i]
+        train_dataset = TensorDataset(train_input, train_infer)
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=100)
+        
+        sqf_rnn = SQF_RNN(10, 30, tau=tau, n_layers=3, M=10, device=device)
+        sqf_rnn.to(device)  
+        criterion = LinearSplineCRPS(10, device)
+        optimizer = optim.Adam(sqf_rnn.parameters(), lr=0.001)
+        
+        pbar = tqdm(range(1000))
+
+        for epoch in pbar:        
+            train_loss = train(sqf_rnn, train_loader, criterion, optimizer, device)
+            pbar.set_description("Train Loss: {:.4f}".format(train_loss))
+            
+        torch.save(sqf_rnn.state_dict(), './assets/SQF-RNN/tau_' + str(tau) + '/SQF-RNN_PHASE_{}.pth'.format(i+1))
