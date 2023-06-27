@@ -22,7 +22,7 @@ python benchmarks/gp_copula.py
 python benchmarks/mqrnn.py 
 python benchmarks/sqf_rnn.py 
 python benchmarks/tft.py
-python benchmarks/benchmark_eval.py --model TFT --tau 1
+python benchmarks/benchmark_eval.py --model 'TFT' --tau 1
 ```
 - detailed configuration files can be found in `configs` folder for `TLAE` and `ProTran`
 
