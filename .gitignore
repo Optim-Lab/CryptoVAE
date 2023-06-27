@@ -13,7 +13,6 @@ overleaf*
 *.pptx
 *_overleaf.png
 wandb*
-*.pdf
 .vscode
 privacy
 *.npy
