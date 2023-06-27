@@ -128,3 +128,61 @@ def evaluate(model, loader, criterion, device):
         total_loss.append(loss)
         
         return sum(total_loss)/len(total_loss)
+
+class GPNegL(nn.Module):
+    def __init__(self, ecdf_list, device):
+        super(GPNegL, self).__init__()
+        self.ecdf_list = ecdf_list 
+        self.device = device
+        self.norm_dist = Normal(0, 1)
+        
+    def forward(self, true, params):
+        d_input = true.shape[-1]
+        
+        mu, sigma = params
+        L, _ = torch.linalg.cholesky_ex(sigma)
+        L_inverse = torch.inverse(L)
+        det_L = torch.det(L)
+        
+        emp_quantile_ = []
+        for i in range(d_input):
+            emp_quantile_.append(torch.tensor(self.ecdf_list[i](true[..., i:i+1])).float())
+        emp_quantile = torch.cat(emp_quantile_, dim=-1).to(self.device)
+        gc_output = self.norm_dist.icdf(torch.clip(emp_quantile, min=0.001, max=0.999))
+        
+        return torch.log(det_L).mean() + (0.5 *  torch.square(L_inverse @ (gc_output.unsqueeze(-1) - mu))).sum(dim=1).mean()    
+
+df = pd.read_csv("../data/crypto.csv", index_col=0)
+
+for tau in [1, 5]:
+    train_list, test_list, norm_param_list = build_datasets_gpcopula(df, tau, 200, 3, how="standard")
+
+    for i in range(len(train_list)):
+        train_input, train_infer = train_list[i]
+        ecdf_list = [ECDF(train_input[::20, ..., i].reshape(-1)) for i in range(10)]
+        train_dataset = TensorDataset(train_input, train_infer)
+        # test_dataset = TensorDataset(*test_list[i])
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=128)
+        # test_loader = DataLoader(test_dataset, shuffle=True, batch_size=10)
+        gp_copula = GPCopula(
+            d_input=10,
+            d_hidden=3,
+            tau=5,
+            beta=3,
+            rank=10,
+            n_layers=2,
+            dr=0.05,
+            device=device
+            )
+        
+        gp_copula.to(device) 
+        criterion = GPNegL(ecdf_list, device)
+        optimizer = optim.Adam(gp_copula.parameters(), lr=0.001)
+        
+        pbar = tqdm(range(1000))
+
+        for epoch in pbar:        
+            train_loss = train(gp_copula, train_loader, criterion, optimizer, device)
+            pbar.set_description("Train Loss: {:.4f}".format(train_loss))
+            
+        torch.save(gp_copula.state_dict(), './assets/GP-Copula/tau_' + str(tau) + '/GP-Copula_PHASE_{}.pth'.format(i+1))
