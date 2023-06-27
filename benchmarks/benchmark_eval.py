@@ -1,4 +1,3 @@
-#%%
 import os
 import pandas as pd
 import numpy as np 
@@ -12,13 +11,19 @@ from mqrnn import MQRnn
 from deepar import DeepAR
 from gp_copula import GPCopula
 from sqf_rnn import SQF_RNN
-#%%
+
+import argparse 
+parser = argparse.ArgumentParser(description='hyperparams')
+parser.add_argument('--tau', required=False, default=1, choices=[1, 5], type=int)
+parser.add_argument('--model', required=True, choices=["MQRNN", "DeepAR", "TFT", "SQF-RNN", "GP-Coupla"], type=str)
+args = parser.parse_args()
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#%%
-df = pd.read_csv("./data/crypto.csv", index_col=0)
-#%%
-MODEL = "TFT"
-tau = 5
+
+df = pd.read_csv("../data/crypto.csv", index_col=0)
+
+MODEL = args.model
+tau = args.tau
 
 if MODEL in ["MQRNN", "DeepAR", "TFT", "SQF-RNN"]:
     train_list, test_list = build_datasets(df, tau, 200, 3)
@@ -55,9 +60,8 @@ DICR = []
 CRPS = []
 MI = []
 STD = []
-# model_name = sorted([dir for dir in dirs if not dir.startswith ('.')])[0]
-# i = 0
-dirs = os.listdir(os.getcwd() + "/assets/weights/" + MODEL + "/tau_" + str(tau))
+
+dirs = os.listdir("../assets/" + MODEL + "/tau_" + str(tau))
 i, model_name = next(enumerate(sorted([dir for dir in dirs if not dir.startswith ('.')])))
 for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith ('.')])):
     quanilte_levels = [0.1, 0.5, 0.9]
@@ -115,7 +119,7 @@ for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith
                         M=10,
                         device=device)
     
-    model.load_state_dict(torch.load(os.getcwd() + "/assets/weights/" + MODEL+ "/tau_" + str(tau) + "/" + model_name, map_location="cpu"))
+    model.load_state_dict(torch.load(os.getcwd() + "/assets/" + MODEL+ "/tau_" + str(tau) + "/" + model_name, map_location="cpu"))
     model.eval()
     
     test_input, test_infer = test_list[i]
@@ -129,7 +133,7 @@ for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith
 
     if MODEL == "DeepAR":
         mu, sigma = model(test_input)
-        deepar_output = gaussian_quantile(mu, sigma) # (batch_size, tau, num_targets, num_qunatiles)
+        deepar_output = gaussian_quantile(mu, sigma) 
         estq1 = torch.Tensor(deepar_output)[..., 0].squeeze()
         estq5 = torch.Tensor(deepar_output)[..., 1].squeeze()
         estq9 = torch.Tensor(deepar_output)[..., -1].squeeze()
@@ -151,13 +155,12 @@ for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith
         mu, sigma = model(test_input)
         
         tmp_mu, tmp_sigma, tmp_samples = model.sample(mu, sigma.squeeze(), 100)
-        # samples.shape
-        # torch.tensor(norm_sigma).unsqueeze(0).shape
+
         samples = tmp_samples * torch.tensor(norm_sigma).unsqueeze(0) + torch.tensor(norm_mu).unsqueeze(0)
         estq1 = torch.quantile(samples, 0.1, dim=0)
         estq5 = torch.quantile(samples, 0.5, dim=0)
         estq9 = torch.quantile(samples, 0.9, dim=0)
-        # (100, bn, tau, tn)
+
         tmp_alpha_09_quantile_loss = torch.divide(torch.maximum(0.9 * (test_infer_.squeeze() - estq9), (1-0.9)*(estq9 -test_infer_.squeeze())), maxvalues)
         tmp_alpha_05_quantile_loss = torch.divide(torch.maximum(0.5 * (test_infer_.squeeze() - estq5), (1-0.5)*(estq5 -test_infer_.squeeze())), maxvalues)
         tmp_alpha_01_quantile_loss = torch.divide(torch.maximum(0.1 * (test_infer_.squeeze() - estq1), (1-0.1)*(estq1 -test_infer_.squeeze())), maxvalues)
@@ -192,7 +195,7 @@ for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith
         CRPS.append(tmp_CRPS)   
         
     else:             
-        model_output = model(test_input) # (batch_size, tau, num_targets, num_quantiles)
+        model_output = model(test_input)
         estq9 = model_output[..., -1].squeeze()
         estq5 = model_output[..., 1].squeeze()
         estq1 = model_output[..., 0].squeeze()
@@ -228,136 +231,3 @@ for i, model_name in enumerate(sorted([dir for dir in dirs if not dir.startswith
     
     DICR.append((CR - (0.8)).abs())
     MI.append(torch.round(torch.divide((estq9 - estq1), maxvalues).mean(), decimals=3))
-    # asset_number = 1
-    # plt.style.use('default')
-    # fig, ax = plt.subplots(figsize=(20, 10))
-    # plt.plot(model_output[..., asset_number, 0].squeeze().detach().numpy())
-    # plt.plot(model_output[..., asset_number, 1].squeeze().detach().numpy())
-    # plt.plot(model_output[..., asset_number, 2].squeeze().detach().numpy())
-    # plt.plot(test_infer[..., 0, asset_number].squeeze(), color='k')
-# %%
-# CRPS
-# alpha_01_quantile_loss
-# alpha_05_quantile_loss
-# alpha_09_quantile_loss
-# DICR
-# MI
-STD 
-# %%
-# model_output = model(test_input)
-# model_output[..., -1].squeeze() # 90% percentile
-# model_output[..., 0].squeeze() # 10% percentile 
-# model_output[..., 1].squeeze() # Median
-#%%
-model_output
-estQ1 = torch.cat(estQ1, dim=0)
-estQ5 = torch.cat(estQ5, dim=0)
-estQ9 = torch.cat(estQ9, dim=0)
-target_.shape
-target_ = target_.detach().cpu().squeeze()
-estQ1 = estQ1.detach().cpu().squeeze()
-estQ5 = estQ5.detach().cpu().squeeze()
-estQ9 = estQ9.detach().cpu().squeeze()
-
-estQ = [estQ1, estQ5, estQ9]
-colnames = [col.replace("KRW-", "") for col in df.columns.to_list()]
-#%%
-# %%
-import matplotlib.pyplot as plt
-import seaborn as sns
-from ing_theme_matplotlib import mpl_style # pip install ing_theme_matplotlib 
-import matplotlib as mpl
-# %%
-def visualize_quantile(target_, estQ, colnames, test_len, config, path, show=False, dark=False):
-     # cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    mpl.rcParams["figure.dpi"] = 200
-    mpl_style(dark=dark)
-    SMALL_SIZE = 16
-    BIGGER_SIZE = 20
-    plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-    plt.rc('axes', titlesize=BIGGER_SIZE)     # fontsize of the axes title
-    plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
-    plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-    plt.rc('ytick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
-    plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
-    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
-    
-    if config["future"] == 1:
-        start_idx = 1279
-        shift = 0
-    elif config["future"] == 5:
-        start_idx = 1275        
-        shift = -4
-    
-    xticks = [17+shift, 231+shift, 443+shift, 657+shift, 870+shift, 1085+shift, 1297+shift, 1509+shift, 1723+shift]
-    xtick_labels = ["2018.03", "2018.10", "2019.05", "2019.12", "2020.07", "2021.02", "2021.09", "2022.04", "2022.11"]
-    
-    figs = []
-    for j in tqdm.tqdm(range(len(colnames)), desc=f"Visualize Quantiles...", disable=show):
-        fig = plt.figure(figsize=(12, 7))   
-        conf = plt.fill_between(
-            np.arange(start_idx, target_.shape[0]), 
-            estQ[0][:, j].numpy(), 
-            estQ[2][:, j].numpy(), 
-            color='blue', alpha=0.3, label=r'80% interval')
-        plt.plot(
-            target_.numpy()[:, j],
-            label=colnames[j], color='black', linestyle='--', linewidth=2)
-        plt.plot(
-            np.arange(start_idx, target_.shape[0]),
-            estQ[1][:, j].numpy(),
-            label='Median', color='green', linewidth=2)
-        plt.axvline(x=start_idx, color='blue', linewidth=2)
-        plt.axvline(x=start_idx + test_len, color='blue', linewidth=2)
-        plt.axvline(x=start_idx + test_len * 2, color='blue', linewidth=2)
-        # plt.xlabel('Date', fontsize=18)
-        plt.ylabel('Price', fontsize=BIGGER_SIZE)
-        plt.ylim(0, target_.numpy()[:, j].max()+1.5)
-        plt.text(1295+shift, target_.numpy()[:, j].max()+0.3,"Phase 1", color='black', fontsize=19)
-        plt.text(1495+shift, target_.numpy()[:, j].max()+0.3,"Phase 2", color='black', fontsize=19)
-        plt.text(1695+shift, target_.numpy()[:, j].max()+0.3,"Phase 3", color='black', fontsize=19)
-        plt.xticks(xticks, xtick_labels, rotation=20)
-        plt.annotate("",
-            xy=(1280+shift, target_.numpy()[:, j].max()+0.05),
-            xytext=(1480+shift, target_.numpy()[:, j].max()+0.05),
-            va="center",
-            ha="center",
-            arrowprops=dict(color='black', arrowstyle="<->"))
-        plt.annotate("",
-            xy=(1480+shift, target_.numpy()[:, j].max()+0.05),
-            xytext=(1680+shift, target_.numpy()[:, j].max()+0.05),
-            va="center",
-            ha="center",
-            arrowprops=dict(color='black', arrowstyle="<->"))
-        plt.annotate("",
-            xy=(1680+shift, target_.numpy()[:, j].max()+0.05),
-            xytext=(1880+shift, target_.numpy()[:, j].max()+0.05),
-            va="center",
-            ha="center",
-            arrowprops=dict(color='black', arrowstyle="<->"))
-        plt.legend(loc = 'upper left')
-        plt.tight_layout()
-        plt.savefig(f'{path}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
-        if show:
-            plt.show()
-        # plt.show()
-        
-        plt.close()
-        
-        figs.append(fig)
-    return figs
-# %%
-colnames = [col.replace("KRW-", "") for col in df.columns.to_list()]
-#%%
-estQ = [Q[::5, :, :].reshape(-1, 10) for Q in estQ]
-#%%
-config = {
-    "model": MODEL,
-    "future": tau,
-    "beta": None,
-    "prior_var": None
-}
-path = "/Users/chulhongsung/Desktop/lab/working_paper/DisTran/assets/figure/results/" + MODEL
-visualize_quantile(target_[::5, :, :].reshape(-1, 10), estQ, colnames, 200, config, path, show=True)
-target_.shape
-# %%
