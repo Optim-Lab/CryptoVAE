@@ -4,7 +4,6 @@ causal_data
 wandb
 wandb_api.txt
 artifacts
-*.pth
 tmp_image_*
 etc
 *.sh
