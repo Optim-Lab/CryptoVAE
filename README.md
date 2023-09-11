@@ -25,6 +25,7 @@ python benchmarks/tft.py
 python benchmarks/benchmark_eval.py --model 'TFT' --tau 1
 ```
 - detailed configuration files can be found in `configs` folder for `TLAE` and `ProTran`
+- pretrained weights for `DeepAR`, `GP-copula`, `MQRNN`, `SQF-RNN`, `TFT` can be found in `/assets` folder
 
 ### codes for evaluation
 - step-by-step evaluation for our proposed method: `infernce.py`
