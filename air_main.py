@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=["Incremental procedure"],
+    # tags=[""],
 )
 #%%
 import argparse
@@ -57,8 +57,8 @@ def get_args(debug):
                         help='seed for repeatable results')
     parser.add_argument('--model', type=str, default='GLD_infinite', 
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
-    parser.add_argument('--data', type=str, default='crypto', 
-                        help='Fitting model options: crypto')
+    parser.add_argument('--data', type=str, default='air', 
+                        help='Fitting model options: air')
     
     parser.add_argument("--d_latent", default=16, type=int,
                         help="size of latent dimension")
@@ -73,14 +73,12 @@ def get_args(debug):
     parser.add_argument("--K", default=20, type=int,
                         help="the number of quantiles to estimate")
     
-    parser.add_argument("--timesteps", default=20, type=int, # equals to C
+    parser.add_argument("--timesteps", default=30, type=int, # equals to C
                         help="the number of conditional time steps")
     parser.add_argument("--future", default=5, type=int, # equals to T - C
                         help="the number of time steps to forecasting")
-    parser.add_argument("--test_len", default=200, type=int,
+    parser.add_argument("--test_len", default=365, type=int,
                         help="length of test dataset in each phase")
-    parser.add_argument("--increment", default=3, type=int,
-                        help="the number of phase")
     
     parser.add_argument("--MC", default=100, type=int,
                         help="the number of samples in Monte Carlo sampling")
@@ -130,40 +128,42 @@ def main():
         os.makedirs('./assets/{}'.format(config["model"]))
         
     """train, test split"""
-    df = pd.read_csv(
-        f'./data/{config["data"]}.csv',
-        index_col=0
+    df_train = pd.read_csv(
+        f'./data/df_{config["data"]}_train.csv',
     )
-    print(df.describe())
+    df_train = df_train.drop(columns=["측정일시"]) * 10
+    df_test = pd.read_csv(
+        f'./data/df_{config["data"]}_test.csv',
+    )
+    df_test = df_test.drop(columns=["측정일시"]) * 10
     
-    colnames = [col.replace("KRW-", "") for col in df.columns.to_list()]
-    config["p"] = df.shape[1]
+    config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
-        train_list, test_list = utils.build_datasets2(df, config["test_len"], config["increment"], config)
+        input_train, infer_train = utils.air_data_generator2(df_train, config["timesteps"], config["future"])
+        input_test, infer_test = utils.air_data_generator2(df_test, config["timesteps"], config["future"])
     else: # reconstruct only T - C
-        train_list, test_list = utils.build_datasets(df, config["test_len"], config["increment"], config)
+        input_train, infer_train = utils.air_data_generator(df_train, config["timesteps"], config["future"])
+        input_test, infer_test = utils.air_data_generator(df_test, config["timesteps"], config["future"])
     #%%
     """model"""
     try:
         model_module = importlib.import_module('modules.{}'.format(config["model"]))
         importlib.reload(model_module)
-        model = [getattr(model_module, config["model"])(config, device).to(device) for _ in range(config["increment"])]
+        model = getattr(model_module, config["model"])(config, device).to(device)
     except:
         model_module = importlib.import_module('modules.{}'.format(config["model"].split('_')[0]))
         importlib.reload(model_module)
-        model = [getattr(model_module, config["model"].split('_')[0])(config, device).to(device) for _ in range(config["increment"])]
+        model = getattr(model_module, config["model"].split('_')[0])(config, device).to(device)
     
-    optimizer = [torch.optim.Adam(
-        m.parameters(), 
+    optimizer = torch.optim.Adam(
+        model.parameters(), 
         lr=config["lr"]
-    ) for m in model]
-
-    for m in model:
-        print(m.train())
+    )
+    model.train()
     #%%
     """Number of Parameters"""
     count_parameters = lambda model: sum(p.numel() for p in model.parameters() if p.requires_grad)
-    num_params = count_parameters(model[0])
+    num_params = count_parameters(model)
     print("Number of Parameters:", num_params)
     wandb.log({'Number of Parameters': num_params})
     #%%
@@ -174,82 +174,72 @@ def main():
         train_module = importlib.import_module('modules.{}_train'.format(config["model"].split('_')[0]))
     importlib.reload(train_module)
     
-    for j, (train_context, train_target) in enumerate(train_list):
-        print(f"\nPhase {j+1} starts...\n")
-        iterations = len(train_context) // config["batch_size"] + 1
+    iterations = len(input_train) // config["batch_size"] + 1
         
-        for e in range(config["epochs"]):
-            logs = train_module.train_function(train_context, train_target, model[j], iterations, config, optimizer[j], device)
-            
-            if e % 10 == 0 or e == config["epochs"] - 1:
-                print_input = "[Phase {}, EPOCH {:03d}]".format(j + 1, e + 1)
-                print_input += ''.join([', {}: {:.4f}'.format(x, y.item() / iterations) for x, y in logs.items()])
-                print(print_input)
-                wandb.log({x : y for x, y in logs.items()})
+    for e in range(config["epochs"]):
+        logs = train_module.train_function(input_train, infer_train, model, iterations, config, optimizer, device)
+        
+        if e % 10 == 0 or e == config["epochs"] - 1:
+            print_input = "[EPOCH {:03d}]".format(e + 1)
+            print_input += ''.join([', {}: {:.4f}'.format(x, y.item() / iterations) for x, y in logs.items()])
+            print(print_input)
+            wandb.log({x : y for x, y in logs.items()})
     #%%
-    plots_dir = './assets/{}/plots(future={})/'.format(config["model"], config["future"])
+    plots_dir = './air_assets/{}/plots(future={})/'.format(config["model"], config["future"])
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """Quantile Estimation"""
     alphas = [0.1, 0.5, 0.9]
-    phaseQ = []
-    for j, ((train_context, train_target), (test_context, test_target)) in enumerate(zip(train_list, test_list)):
-        print(f"\nPhase {j+1} Quantile Estimation...\n")
-
-        if config["model"] in ["TLAE", "ProTran"]:
-            est_quantiles, _ = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
-        else:
-            est_quantiles = model[j].est_quantile(test_context, alphas, config["MC"])
-        phaseQ.append(est_quantiles)
+    if config["model"] in ["TLAE", "ProTran"]:
+        est_quantiles, _ = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
+    else:
+        est_quantiles = model.est_quantile(input_test, alphas, config["MC"])
     #%%
     """CRPS: Proposal model & TLAE"""
     # Get maximum for normalization
-    maxvalues = [test[1].reshape(-1, config["p"]).max(dim=0, keepdims=True).values for test in test_list]
+    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values
     
-    for j, (test_context, test_target) in enumerate(test_list):
-        print(f"\nPhase {j+1} CRPS...\n")
-
-        if config["model"] in ["TLAE", "ProTran"]:
-            _, samples = model[j].est_quantile(test_context, alphas, config["MC"], config["test_len"])
-            test_target_ = test_target[:, config["timesteps"]:, :].reshape(-1, config["p"])
-        else:
-            samples = model[j].sampling(test_context, config["MC"])
-            test_target_ = test_target.reshape(-1, config["p"])
-        
-        term1 = (samples - test_target_[:, None, :]).abs().mean(dim=1)
-        term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
-        CRPS = ((term1 - term2) / maxvalues[j]).mean(dim=0) # normalized CRPS
-        print(f'[Phase{j+1}] CRPS: {CRPS.mean():.3f}')
-        wandb.log({f'[Phase{j+1}] CRPS': CRPS.mean().item()})
+    if config["model"] in ["TLAE", "ProTran"]:
+        _, samples = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
+        infer_test_ = infer_test[:, config["timesteps"]:, :].reshape(-1, config["p"])
+    else:
+        samples = model.sampling(input_test, config["MC"])
+        infer_test_ = infer_test.reshape(-1, config["p"])
+    
+    term1 = (samples - infer_test_[:, None, :]).abs().mean(dim=1)
+    term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
+    CRPS = ((term1 - term2) / maxvalues).mean(dim=0) # normalized CRPS
+    print(f'CRPS: {CRPS.mean():.3f}')
+    wandb.log({f'CRPS': CRPS.mean().item()})
     #%%
     """Visualize"""
-    estQ = []
-    for j in range(len(alphas)):
-        estQ.append(torch.cat([phaseQ[i][j] for i in range(len(phaseQ))], dim=0))
-    estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in estQ]
+    estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
     
-    target = torch.cat([train_list[-1][1], test_list[-1][1]], dim=0)
+    target = torch.cat([infer_train, infer_test], dim=0)
     if config["model"] in ["TLAE", "ProTran"]:
         target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
     else:
         target_ = target[::config["future"], :, :].reshape(-1, config["p"])
-    start_idx = train_list[0][0].shape[0]
+    start_idx = input_train.shape[0]
     
+    """FIXME"""
+    colnames = df_train.columns
     figs = utils.visualize_quantile(
-        target_, estQ, start_idx, colnames, config["test_len"], config,
+        target_, estQ, start_idx+4, colnames, config["test_len"], config,
         path=plots_dir,
         show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     """model save"""
+    if not os.path.exists("./air_assets/models/"):
+        os.makedirs("./air_assets/models/")
     artifact = wandb.Artifact(
-        f'phase_{config["data"]}_{config["model"]}_{config["future"]}', 
+        f'{config["data"]}_{config["model"]}_{config["future"]}', 
         type='model',
         metadata=config) # description=""
-    for j, m in enumerate(model):
-        torch.save(m.state_dict(), f'./assets/phase{j}_{config["data"]}_{config["model"]}_{config["future"]}.pth')
-        artifact.add_file(f'./assets/phase{j}_{config["data"]}_{config["model"]}_{config["future"]}.pth')
+    torch.save(model.state_dict(), f'./air_assets/models/{config["data"]}_{config["model"]}_{config["future"]}.pth')
+    artifact.add_file(f'./air_assets/models/{config["data"]}_{config["model"]}_{config["future"]}.pth')
     artifact.add_file('./main.py')
     try:
         artifact.add_file(f'./modules/{config["model"]}.py')
