@@ -1,0 +1,6 @@
+seed: 1
+model: 'GLD_infinite'
+beta: 0.1
+prior_var: 0.1
+epochs: 300
+lr: 0.005

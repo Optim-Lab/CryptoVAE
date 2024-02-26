@@ -106,14 +106,9 @@ def main():
     config = vars(get_args(debug=False)) # default configuration
     
     """load config"""
-    if config["model"].startswith("GLD"):
-        config_path = f'./configs/{config["model"]}_{config["future"]}.yaml'
-        if os.path.isfile(config_path):
-            config = utils.load_config(config, config_path)
-    else:
-        config_path = f'./configs/{config["model"]}.yaml'
-        if os.path.isfile(config_path):
-            config = utils.load_config(config, config_path)
+    config_path = f'./air_configs/{config["model"]}.yaml'
+    if os.path.isfile(config_path):
+        config = utils.load_config(config, config_path)
     
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if config["cuda"] else torch.device('cpu')
@@ -131,11 +126,11 @@ def main():
     df_train = pd.read_csv(
         f'./data/df_{config["data"]}_train.csv',
     )
-    df_train = df_train.drop(columns=["측정일시"]) * 10
+    df_train = df_train.drop(columns=["측정일시"]) * 10 # scaling
     df_test = pd.read_csv(
         f'./data/df_{config["data"]}_test.csv',
     )
-    df_test = df_test.drop(columns=["측정일시"]) * 10
+    df_test = df_test.drop(columns=["측정일시"]) * 10 # scaling
     
     config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
@@ -165,7 +160,6 @@ def main():
     count_parameters = lambda model: sum(p.numel() for p in model.parameters() if p.requires_grad)
     num_params = count_parameters(model)
     print("Number of Parameters:", num_params)
-    wandb.log({'Number of Parameters': num_params})
     #%%
     """Training"""
     try:
@@ -184,52 +178,6 @@ def main():
             print_input += ''.join([', {}: {:.4f}'.format(x, y.item() / iterations) for x, y in logs.items()])
             print(print_input)
             wandb.log({x : y for x, y in logs.items()})
-    #%%
-    plots_dir = './air_assets/{}/plots(future={})/'.format(config["model"], config["future"])
-    if not os.path.exists(plots_dir): os.makedirs(plots_dir)
-    #%%
-    """Quantile Estimation"""
-    alphas = [0.1, 0.5, 0.9]
-    if config["model"] in ["TLAE", "ProTran"]:
-        est_quantiles, _ = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
-    else:
-        est_quantiles = model.est_quantile(input_test, alphas, config["MC"])
-    #%%
-    """CRPS: Proposal model & TLAE"""
-    # Get maximum for normalization
-    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values
-    
-    if config["model"] in ["TLAE", "ProTran"]:
-        _, samples = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
-        infer_test_ = infer_test[:, config["timesteps"]:, :].reshape(-1, config["p"])
-    else:
-        samples = model.sampling(input_test, config["MC"])
-        infer_test_ = infer_test.reshape(-1, config["p"])
-    
-    term1 = (samples - infer_test_[:, None, :]).abs().mean(dim=1)
-    term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
-    CRPS = ((term1 - term2) / maxvalues).mean(dim=0) # normalized CRPS
-    print(f'CRPS: {CRPS.mean():.3f}')
-    wandb.log({f'CRPS': CRPS.mean().item()})
-    #%%
-    """Visualize"""
-    estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
-    
-    target = torch.cat([infer_train, infer_test], dim=0)
-    if config["model"] in ["TLAE", "ProTran"]:
-        target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
-    else:
-        target_ = target[::config["future"], :, :].reshape(-1, config["p"])
-    start_idx = input_train.shape[0]
-    
-    """FIXME"""
-    colnames = df_train.columns
-    figs = utils.visualize_quantile(
-        target_, estQ, start_idx+4, colnames, config["test_len"], config,
-        path=plots_dir,
-        show=False, dark=False)
-    for j in range(len(colnames)):
-        wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     """model save"""
     if not os.path.exists("./air_assets/models/"):

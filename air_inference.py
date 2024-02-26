@@ -139,18 +139,20 @@ def main():
     #%%
     """Quantile Estimation"""
     # Get maximum for normalization
-    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values
+    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values / 10
     
     alphas = [0.1, 0.5, 0.9]
     if config["model"] in ["TLAE", "ProTran"]:
         est_quantiles, _ = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
     else:
         est_quantiles = model.est_quantile(input_test, alphas, config["MC"])
+    est_quantiles = [q / 10 for q in est_quantiles]
     
     if config["model"] in ["TLAE", "ProTran"]:
         infer_test_ = infer_test[:, config["timesteps"]:, :].reshape(-1, config["p"])
     else:
         infer_test_ = infer_test.reshape(-1, config["p"])
+    infer_test_ /= 10
     
     """DICR"""
     est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
@@ -196,6 +198,7 @@ def main():
     else:
         samples = model.sampling(input_test, config["MC"])
         infer_test_ = infer_test.reshape(-1, config["p"])
+    samples /= 10
     
     term1 = (samples - infer_test_[:, None, :]).abs().mean(dim=1)
     term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5
@@ -212,43 +215,19 @@ def main():
     #%%
     """Visualize"""
     estQ = [Q[::config["future"], :, :].reshape(-1, config["p"]) for Q in est_quantiles]
-    
-    target = torch.cat([infer_train, infer_test], dim=0)
     if config["model"] in ["TLAE", "ProTran"]:
-        target_ = target[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
+        target_ = infer_test[::config["future"], config["timesteps"]:, :].reshape(-1, config["p"])
     else:
-        target_ = target[::config["future"], :, :].reshape(-1, config["p"])
-    start_idx = input_train.shape[0]
+        target_ = infer_test[::config["future"], :, :].reshape(-1, config["p"])
     
-    """FIXME"""
     colnames = df_train.columns
-    figs = utils.visualize_quantile(
-        target_, estQ, start_idx+4, colnames, config["test_len"], config,
-        path=plots_dir,
-        show=False, dark=False)
+    figs = utils.air_visualize_quantile(
+        target_, estQ, colnames, config, path=plots_dir, show=False, dark=False)
     for j in range(len(colnames)):
         wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
-    
-    # figs = utils.visualize_quantile(
-    #     target_, estQ, colnames, config["test_len"], config, plots_dir,
-    #     show=False, dark=False)
-    # for j in range(len(colnames)):
-    #     figs[j].savefig(f'{plots_dir}/{colnames[j]}_{config["model"]}_future{config["future"]}_beta{config["beta"]}_var{config["prior_var"]}.png')
-    #     wandb.log({f'Quantile ({colnames[j]})': wandb.Image(figs[j])})
     #%%
     wandb.run.finish()
 #%%
 if __name__ == '__main__':
     main()
-#%%
-# """Expected Shortfall"""
-# for i, a in enumerate(alphas):
-#     residual = samples - est_quantiles[i][:, None, :]
-#     ES = samples.mean(dim=1) - (residual * (a - (residual < 0).to(torch.float32))).mean(dim=1) / a
-#     df = pd.DataFrame(
-#         ES.numpy(),
-#         columns=colnames
-#     )
-#     df.to_csv(f'./assets/{config["model"]}/out/ES(alpha={a}).csv')
-#     wandb.run.summary[f'ES(alpha={a})'] = wandb.Table(data=df)
 #%%

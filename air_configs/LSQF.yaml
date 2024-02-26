@@ -1,0 +1,7 @@
+seed: 1
+model: 'LSQF'
+beta: 0.1
+prior_var: 0.1
+epochs: 200
+epochs: 300
+lr: 0.005
