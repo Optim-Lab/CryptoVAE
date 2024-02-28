@@ -1,6 +1,7 @@
 seed: 1
 model: 'ExpLog'
-beta: 0.5
-prior_var: 0.1
+beta: 0.1
+prior_var: 1
+scaling: 10
 epochs: 500
 lr: 0.0005

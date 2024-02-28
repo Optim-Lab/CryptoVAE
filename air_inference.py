@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=["Inference"],
+    tags=["Inference", "sweep"],
 )
 #%%
 import argparse
@@ -59,8 +59,8 @@ def get_args(debug):
                         help='Fitting model options: GLD_finite, GLD_infinite, LSQF, ExpLog, TLAE, ProTran')
     parser.add_argument('--data', type=str, default='air', 
                         help='Fitting model options: air')
-    parser.add_argument("--future", default=5, type=int,
-                        help="the number of time steps to forecasting")
+    parser.add_argument('--scaling', default=10, type=float,
+                        help='scaling factor')
     if debug:
         return parser.parse_args(args=[])
     else:    
@@ -72,7 +72,7 @@ def main():
     
     """model load"""
     artifact = wandb.use_artifact('anseunghwan/DDM/{}_{}_{}:v{}'.format(
-        config["data"], config["model"], config["future"], config["num"]), type='model')
+        config["data"], config["model"], config["scaling"], config["num"]), type='model')
     for key, item in artifact.metadata.items():
         config[key] = item
     model_dir = artifact.download()
@@ -89,18 +89,18 @@ def main():
     if not os.path.exists('./assets/{}'.format(config["model"])):
         os.makedirs('./assets/{}'.format(config["model"]))
         
-    plots_dir = f'./air_assets/{config["model"]}/plots(future={config["future"]})/beta{config["beta"]}_var{config["prior_var"]}'    
+    plots_dir = f'./air_assets/{config["model"]}/plots(scaling={config["scaling"]})/beta{config["beta"]}_var{config["prior_var"]}'    
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
     #%%
     """train, test split"""
     df_train = pd.read_csv(
         f'./data/df_{config["data"]}_train.csv',
     )
-    df_train = df_train.drop(columns=["측정일시"]) * 10
+    df_train = df_train.drop(columns=["측정일시"]) * config["scaling"]
     df_test = pd.read_csv(
         f'./data/df_{config["data"]}_test.csv',
     )
-    df_test = df_test.drop(columns=["측정일시"]) * 10
+    df_test = df_test.drop(columns=["측정일시"]) * config["scaling"]
     
     config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
@@ -139,20 +139,20 @@ def main():
     #%%
     """Quantile Estimation"""
     # Get maximum for normalization
-    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values / 10
+    maxvalues = infer_test.reshape(-1, config["p"]).max(dim=0, keepdims=True).values / config["scaling"]
     
     alphas = [0.1, 0.5, 0.9]
     if config["model"] in ["TLAE", "ProTran"]:
         est_quantiles, _ = model.est_quantile(input_test, alphas, config["MC"], config["test_len"])
     else:
         est_quantiles = model.est_quantile(input_test, alphas, config["MC"])
-    est_quantiles = [q / 10 for q in est_quantiles]
+    est_quantiles = [q / config["scaling"] for q in est_quantiles]
     
     if config["model"] in ["TLAE", "ProTran"]:
         infer_test_ = infer_test[:, config["timesteps"]:, :].reshape(-1, config["p"])
     else:
         infer_test_ = infer_test.reshape(-1, config["p"])
-    infer_test_ /= 10
+    infer_test_ /= config["scaling"]
     
     """DICR"""
     est_quantiles_ = [Q[:, :, :].reshape(-1, config["p"]) for Q in est_quantiles]
@@ -198,7 +198,7 @@ def main():
     else:
         samples = model.sampling(input_test, config["MC"])
         infer_test_ = infer_test.reshape(-1, config["p"])
-    samples /= 10
+    samples /= config["scaling"]
     
     term1 = (samples - infer_test_[:, None, :]).abs().mean(dim=1)
     term2 = (samples[:, :, None, :] - samples[:, None, :, :]).abs().mean(dim=[1, 2]) * 0.5

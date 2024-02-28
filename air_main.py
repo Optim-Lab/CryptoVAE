@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    # tags=[""],
+    tags=["sweep"],
 )
 #%%
 import argparse
@@ -82,7 +82,7 @@ def get_args(debug):
     
     parser.add_argument("--MC", default=100, type=int,
                         help="the number of samples in Monte Carlo sampling")
-    parser.add_argument('--epochs', default=400, type=int,
+    parser.add_argument('--epochs', default=300, type=int,
                         help='the number of epochs')
     parser.add_argument('--batch_size', default=256, type=int,
                         help='batch size')
@@ -95,6 +95,8 @@ def get_args(debug):
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
+    parser.add_argument('--scaling', default=10, type=float,
+                        help='scaling factor')
     
     if debug:
         return parser.parse_args(args=[])
@@ -105,10 +107,10 @@ def main():
     #%%
     config = vars(get_args(debug=False)) # default configuration
     
-    """load config"""
-    config_path = f'./air_configs/{config["model"]}.yaml'
-    if os.path.isfile(config_path):
-        config = utils.load_config(config, config_path)
+    # """load config"""
+    # config_path = f'./air_configs/{config["model"]}.yaml'
+    # if os.path.isfile(config_path):
+    #     config = utils.load_config(config, config_path)
     
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if config["cuda"] else torch.device('cpu')
@@ -126,11 +128,11 @@ def main():
     df_train = pd.read_csv(
         f'./data/df_{config["data"]}_train.csv',
     )
-    df_train = df_train.drop(columns=["측정일시"]) * 10 # scaling
+    df_train = df_train.drop(columns=["측정일시"]) * config["scaling"] # scaling
     df_test = pd.read_csv(
         f'./data/df_{config["data"]}_test.csv',
     )
-    df_test = df_test.drop(columns=["측정일시"]) * 10 # scaling
+    df_test = df_test.drop(columns=["측정일시"]) * config["scaling"] # scaling
     
     config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
@@ -182,13 +184,14 @@ def main():
     """model save"""
     if not os.path.exists("./air_assets/models/"):
         os.makedirs("./air_assets/models/")
+    model_name = f'{config["data"]}_{config["model"]}_{config["scaling"]}'
     artifact = wandb.Artifact(
-        f'{config["data"]}_{config["model"]}_{config["future"]}', 
+        model_name, 
         type='model',
         metadata=config) # description=""
-    torch.save(model.state_dict(), f'./air_assets/models/{config["data"]}_{config["model"]}_{config["future"]}.pth')
-    artifact.add_file(f'./air_assets/models/{config["data"]}_{config["model"]}_{config["future"]}.pth')
-    artifact.add_file('./main.py')
+    torch.save(model.state_dict(), f'./air_assets/models/{model_name}.pth')
+    artifact.add_file(f'./air_assets/models/{model_name}.pth')
+    artifact.add_file('./air_main.py')
     try:
         artifact.add_file(f'./modules/{config["model"]}.py')
         artifact.add_file(f'./modules/{config["model"]}_train.py')
