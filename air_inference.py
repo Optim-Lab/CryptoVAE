@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=["Inference", "sweep"],
+    tags=["Inference", "heavy-tailed"],
 )
 #%%
 import argparse
@@ -70,9 +70,14 @@ def main():
     #%%
     config = vars(get_args(debug=False)) # default configuration
     
-    """model load"""
-    artifact = wandb.use_artifact('anseunghwan/DDM/{}_{}_{}:v{}'.format(
-        config["data"], config["model"], config["scaling"], config["num"]), type='model')
+    # """model load"""
+    # config_path = f'./air_configs/{config["model"]}.yaml'
+    # if os.path.isfile(config_path):
+    #     config = utils.load_config(config, config_path)
+        
+    model_name = f'heavytailed_{config["data"]}_{config["model"]}_{config["scaling"]}'
+    artifact = wandb.use_artifact('anseunghwan/DDM/{}:v{}'.format(
+        model_name, config["num"]), type='model')
     for key, item in artifact.metadata.items():
         config[key] = item
     model_dir = artifact.download()
@@ -94,13 +99,15 @@ def main():
     #%%
     """train, test split"""
     df_train = pd.read_csv(
-        f'./data/df_{config["data"]}_train.csv',
+        f'./data/df_{config["data"]}_train_no_scaled.csv',
     )
-    df_train = df_train.drop(columns=["측정일시"]) * config["scaling"]
+    df_train = df_train.drop(columns=["측정일시"]) * config["scaling"] # scaling
+    df_train = df_train[["pm10", "pm2.5"]]
     df_test = pd.read_csv(
-        f'./data/df_{config["data"]}_test.csv',
+        f'./data/df_{config["data"]}_test_no_scaled.csv',
     )
-    df_test = df_test.drop(columns=["측정일시"]) * config["scaling"]
+    df_test = df_test.drop(columns=["측정일시"]) * config["scaling"] # scaling
+    df_test = df_test[["pm10", "pm2.5"]]
     
     config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T

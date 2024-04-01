@@ -38,7 +38,7 @@ except:
 run = wandb.init(
     project="DDM", 
     entity="anseunghwan",
-    tags=["sweep"],
+    tags=["heavy-tailed"],
 )
 #%%
 import argparse
@@ -95,7 +95,7 @@ def get_args(debug):
                         help='variance of prior distribution')
     parser.add_argument('--beta', default=1, type=float,
                         help='scale parameter of asymmetric Laplace distribution')
-    parser.add_argument('--scaling', default=10, type=float,
+    parser.add_argument('--scaling', default=1, type=float,
                         help='scaling factor')
     
     if debug:
@@ -126,13 +126,15 @@ def main():
         
     """train, test split"""
     df_train = pd.read_csv(
-        f'./data/df_{config["data"]}_train.csv',
+        f'./data/df_{config["data"]}_train_no_scaled.csv',
     )
     df_train = df_train.drop(columns=["측정일시"]) * config["scaling"] # scaling
+    df_train = df_train[["pm10", "pm2.5"]]
     df_test = pd.read_csv(
-        f'./data/df_{config["data"]}_test.csv',
+        f'./data/df_{config["data"]}_test_no_scaled.csv',
     )
     df_test = df_test.drop(columns=["측정일시"]) * config["scaling"] # scaling
+    df_test = df_test[["pm10", "pm2.5"]]
     
     config["p"] = df_train.shape[1]
     if config["model"] in ["TLAE", "ProTran"]: # reconstruct T
@@ -184,7 +186,7 @@ def main():
     """model save"""
     if not os.path.exists("./air_assets/models/"):
         os.makedirs("./air_assets/models/")
-    model_name = f'{config["data"]}_{config["model"]}_{config["scaling"]}'
+    model_name = f'heavytailed_{config["data"]}_{config["model"]}_{config["scaling"]}'
     artifact = wandb.Artifact(
         model_name, 
         type='model',
