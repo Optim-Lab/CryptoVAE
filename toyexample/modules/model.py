@@ -13,6 +13,12 @@ class GLDDecoder(nn.Module):
         self.config = config
         self.device = device
         
+        self.encoder = nn.Sequential(
+            nn.Linear(1, 2),
+            nn.ELU(),
+            nn.Linear(2, config["latent_dim"] * 2),
+        ).to(device)
+        
         self.decoder = nn.Sequential(
             nn.Linear(config["latent_dim"], 32),
             nn.ELU(),
@@ -21,7 +27,38 @@ class GLDDecoder(nn.Module):
             nn.Linear(32, 4),
         ).to(device)
     
-    def forward(self, z):
+    def get_posterior(self, input):
+        h = self.encoder(input)
+        mean, logvar = torch.split(h, self.config["latent_dim"], dim=1)
+        return mean, logvar
+    
+    def sampling(self, mean, logvar):
+        noise = torch.randn(mean.size(0), self.config["latent_dim"]).to(self.device) 
+        z = mean + torch.exp(logvar / 2) * noise
+        return z
+    
+    def encode(self, input):
+        mean, logvar = self.get_posterior(input)
+        z = self.sampling(mean, logvar)
+        return z, mean, logvar
+    
+    def forward(self, input):
+        z, mean, logvar = self.encode(input)
+        
+        h = self.decoder(z)
+        theta1 = h[:, [0]]
+        theta2 = nn.Softplus()(h[:, [1]])
+        if self.config["model"] == 'GLD_finite':
+            # finite support
+            theta3 = (h[:, [2]]).exp()
+            theta4 = (h[:, [3]]).exp()
+        elif self.config["model"] == 'GLD_infinite':
+            # infinite support
+            theta3 = -(h[:, [2]]).exp()
+            theta4 = -(h[:, [3]]).exp()
+        return z, mean, logvar, theta1, theta2, theta3, theta4
+
+    def decode(self, z):
         h = self.decoder(z)
         theta1 = h[:, [0]]
         theta2 = nn.Softplus()(h[:, [1]])
@@ -48,19 +85,45 @@ class GaussianDecoder(nn.Module):
         self.config = config
         self.device = device
         
+        self.encoder = nn.Sequential(
+            nn.Linear(1, 2),
+            nn.ELU(),
+            nn.Linear(2, config["latent_dim"] * 2),
+        ).to(device)
+        
         self.decoder = nn.Sequential(
             nn.Linear(config["latent_dim"], 32),
             nn.ELU(),
             nn.Linear(32, 32),
             nn.ELU(),
-            nn.Linear(32, 2),
+            nn.Linear(32, 1),
+            # nn.Linear(32, 2),
         ).to(device)
     
-    def forward(self, z):
-        h = self.decoder(z)
-        mean = h[:, [0]]
-        logvar = h[:, [1]]
+    def get_posterior(self, input):
+        h = self.encoder(input)
+        mean, logvar = torch.split(h, self.config["latent_dim"], dim=1)
         return mean, logvar
+    
+    def sampling(self, mean, logvar):
+        noise = torch.randn(mean.size(0), self.config["latent_dim"]).to(self.device) 
+        z = mean + torch.exp(logvar / 2) * noise
+        return z
+    
+    def encode(self, input):
+        mean, logvar = self.get_posterior(input)
+        z = self.sampling(mean, logvar)
+        return z, mean, logvar
+    
+    def forward(self, input):
+        z, mean, logvar = self.encode(input)
+        
+        xhat = self.decoder(z)
+        return z, mean, logvar, xhat
+        
+        # h = self.decoder(z)
+        # xhat, logsigma = h[:, [0]], h[:, [1]]
+        # return z, mean, logvar, xhat, logsigma
 #%%
 class LSQFDecoder(nn.Module):
     def __init__(self, config, device):
@@ -68,6 +131,12 @@ class LSQFDecoder(nn.Module):
         
         self.config = config
         self.device = device
+        
+        self.encoder = nn.Sequential(
+            nn.Linear(1, 2),
+            nn.ELU(),
+            nn.Linear(2, config["latent_dim"] * 2),
+        ).to(device)
         
         self.delta = torch.arange(0, 1 + config["step"], step=config["step"]).view(1, -1).to(device)
         self.M = self.delta.size(1) - 1
@@ -78,8 +147,35 @@ class LSQFDecoder(nn.Module):
             nn.ELU(),
             nn.Linear(32, 1 + (self.M + 1)),
         ).to(device)
+        
+    def get_posterior(self, input):
+        h = self.encoder(input)
+        mean, logvar = torch.split(h, self.config["latent_dim"], dim=1)
+        return mean, logvar
     
-    def forward(self, z):
+    def sampling(self, mean, logvar):
+        noise = torch.randn(mean.size(0), self.config["latent_dim"]).to(self.device) 
+        z = mean + torch.exp(logvar / 2) * noise
+        return z
+    
+    def encode(self, input):
+        mean, logvar = self.get_posterior(input)
+        z = self.sampling(mean, logvar)
+        return z, mean, logvar
+    
+    def forward(self, input):
+        z, mean, logvar = self.encode(input)
+        
+        h = self.decoder(z)
+        gamma = h[:, [0]]
+        beta = torch.cat([
+            torch.zeros_like(gamma),
+            nn.ReLU()(h[:, 1:]) # positive constraint
+        ], dim=1)
+        beta = beta[:, 1:] - beta[:, :-1]
+        return z, mean, logvar, gamma, beta
+
+    def decode(self, z):
         h = self.decoder(z)
         gamma = h[:, [0]]
         beta = torch.cat([
