@@ -16,7 +16,7 @@ def get_args(debug):
                         help='seed for repeatable results')
     parser.add_argument('--dataset', type=str, default='heavytailed', 
                         help='Dataset options: heavytailed, uniform, mixture')
-    parser.add_argument('--model', type=str, default='LSQF', 
+    parser.add_argument('--model', type=str, default='GLD_finite', 
                         help='Model options: Gaussian, GLD_finite, GLD_infinite, LSQF')
     
     parser.add_argument("--latent_dim", default=2, type=int,
@@ -41,7 +41,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=True)) # default configuration
+    config = vars(get_args(debug=False)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     
@@ -201,6 +201,8 @@ def main():
     plt.hist(
         syndata.numpy(), 
         density=True, bins="scott", label=f"synthetic({config['model']})", alpha=0.7)
+    if config["dataset"] == "heavytailed":
+        plt.ylim(0, 0.01)
     plt.legend()
     plt.tight_layout()
     plt.savefig(f"./{asset_dir}/aggregated_{config['dataset']}_{config['model']}.png")
@@ -212,20 +214,18 @@ def main():
             z_ = torch.randn((20, config["latent_dim"]))
             theta1, theta2, theta3, theta4 = model.decode(z_)
 
+        var = stats.multivariate_normal(mean=[0,0], cov=[[1,0],[0,1]])
+        weight = var.pdf(z_.numpy())
+        if config["dataset"] == "uniform":
+            weight = np.ones_like(weight)
+
         for i in range(len(z_)):
             alpha = torch.linspace(0, 1, 1000)[:, None]
             syndata = model.quantile_function(alpha, theta1[[i]], theta2[[i]], theta3[[i]], theta4[[i]])
             dx = syndata[1:] - syndata[0:-1]
-            deriv = np.diff(alpha.numpy().squeeze())/dx.squeeze()
-            plt.plot(syndata.numpy().squeeze()[1:], deriv)
-            
-        plt.plot(
-            np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False), linewidth=3, label="true")
-        plt.fill_between(
-            np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False), 
-            color='blue', alpha=0.3)
+            deriv = np.diff(alpha.numpy().squeeze()) / dx.squeeze()
+            plt.plot(syndata.numpy().squeeze()[1:], weight[i] * deriv)
+        plt.hist(data.numpy(), density=True, bins="scott", alpha=0.5, label="true")
         plt.tight_layout()
         plt.legend()
         plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
@@ -247,7 +247,7 @@ def main():
         plt.fill_between(
             np.sort(data.squeeze().numpy()), 
             np.linspace(0, 1, len(data), endpoint=False), 
-            color='blue', alpha=0.3)
+            color='blue', alpha=0.1)
         plt.tight_layout()
         plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
         # plt.show()
@@ -262,6 +262,8 @@ def main():
         
         var = stats.multivariate_normal(mean=[0,0], cov=[[1,0],[0,1]])
         weight = var.pdf(z_.numpy())
+        if config["dataset"] == "uniform":
+            weight = np.ones_like(weight)
         mu = xhat.numpy()
         sigma = np.ones((len(z_), 1)) * np.sqrt(beta_)
         # sigma = logsigma.exp().sqrt().numpy()
