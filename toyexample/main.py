@@ -16,7 +16,7 @@ def get_args(debug):
                         help='seed for repeatable results')
     parser.add_argument('--dataset', type=str, default='heavytailed', 
                         help='Dataset options: heavytailed, uniform, mixture')
-    parser.add_argument('--model', type=str, default='Gaussian', 
+    parser.add_argument('--model', type=str, default='LSQF', 
                         help='Model options: Gaussian, GLD_finite, GLD_infinite, LSQF')
     
     parser.add_argument("--latent_dim", default=2, type=int,
@@ -41,7 +41,7 @@ def get_args(debug):
 #%%
 def main():
     #%%
-    config = vars(get_args(debug=False)) # default configuration
+    config = vars(get_args(debug=True)) # default configuration
     config["cuda"] = torch.cuda.is_available()
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     
@@ -213,9 +213,12 @@ def main():
             theta1, theta2, theta3, theta4 = model.decode(z_)
 
         for i in range(len(z_)):
-            alpha = torch.linspace(0, 1, 100)[:, None]
+            alpha = torch.linspace(0, 1, 1000)[:, None]
             syndata = model.quantile_function(alpha, theta1[[i]], theta2[[i]], theta3[[i]], theta4[[i]])
-            plt.plot(syndata.numpy(), alpha.numpy())
+            dx = syndata[1:] - syndata[0:-1]
+            deriv = np.diff(alpha.numpy().squeeze())/dx.squeeze()
+            plt.plot(syndata.numpy().squeeze()[1:], deriv)
+            
         plt.plot(
             np.sort(data.squeeze().numpy()), 
             np.linspace(0, 1, len(data), endpoint=False), linewidth=3, label="true")
