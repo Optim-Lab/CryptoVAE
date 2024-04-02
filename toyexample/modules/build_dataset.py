@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 
+import numpy as np
 from scipy.stats import t
 #%%
 def build_heavytailed(config, device):
@@ -10,6 +11,7 @@ def build_heavytailed(config, device):
     
     df = 3 # degrees of freedom
     data = t.rvs(df, size=(n, 1), random_state=0)
+    data = np.clip(data, -20, 20)
     data = torch.from_numpy(data).to(device).float()
     return data
 #%%

@@ -14,14 +14,14 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=42, 
                         help='seed for repeatable results')
-    parser.add_argument('--dataset', type=str, default='mixture', 
+    parser.add_argument('--dataset', type=str, default='heavytailed', 
                         help='Dataset options: heavytailed, uniform, mixture')
     parser.add_argument('--model', type=str, default='Gaussian', 
                         help='Model options: Gaussian, GLD_finite, GLD_infinite, LSQF')
     
     parser.add_argument("--latent_dim", default=2, type=int,
                         help="the latent dimension size")
-    parser.add_argument("--n", default=5000, type=int,
+    parser.add_argument("--n", default=10000, type=int,
                         help="the number of observations")
     
     parser.add_argument('--epochs', default=500, type=int,
@@ -209,7 +209,7 @@ def main():
     #%%
     if config["model"] in ["GLD_finite", "GLD_infinite"]:
         with torch.no_grad():
-            z_ = torch.randn((30, config["latent_dim"]))
+            z_ = torch.randn((20, config["latent_dim"]))
             theta1, theta2, theta3, theta4 = model.decode(z_)
 
         for i in range(len(z_)):
@@ -218,19 +218,20 @@ def main():
             plt.plot(syndata.numpy(), alpha.numpy())
         plt.plot(
             np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False))
+            np.linspace(0, 1, len(data), endpoint=False), linewidth=3, label="true")
         plt.fill_between(
             np.sort(data.squeeze().numpy()), 
             np.linspace(0, 1, len(data), endpoint=False), 
             color='blue', alpha=0.3)
         plt.tight_layout()
+        plt.legend()
         plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
         # plt.show()
         plt.close()
     #%%
     if config["model"] == "LSQF":
         with torch.no_grad():
-            z_ = torch.randn((30, config["latent_dim"]))
+            z_ = torch.randn((20, config["latent_dim"]))
             gamma, beta = model.decode(z_)
 
         for i in range(len(z_)):
@@ -239,7 +240,7 @@ def main():
             plt.plot(syndata.numpy(), alpha.numpy())
         plt.plot(
             np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False))
+            np.linspace(0, 1, len(data), endpoint=False), linewidth=3, label="true")
         plt.fill_between(
             np.sort(data.squeeze().numpy()), 
             np.linspace(0, 1, len(data), endpoint=False), 
@@ -251,12 +252,13 @@ def main():
     #%%
     if config["model"] == "Gaussian":
         with torch.no_grad():
-            z_ = torch.randn((30, config["latent_dim"])) # prior distribution
+            z_ = torch.randn((20, config["latent_dim"])) # prior distribution
             xhat = model.decoder(z_)
             # h = model.decoder(z_)
             # xhat, logsigma = h[:, [0]], h[:, [1]]
         
-        weight = stats.norm.pdf(z_.numpy(), 0, 1)
+        var = stats.multivariate_normal(mean=[0,0], cov=[[1,0],[0,1]])
+        weight = var.pdf(z_.numpy())
         mu = xhat.numpy()
         sigma = np.ones((len(z_), 1)) * np.sqrt(beta_)
         # sigma = logsigma.exp().sqrt().numpy()
@@ -264,7 +266,8 @@ def main():
         for i in range(len(z_)):
             x = np.linspace(mu[i] - 3*sigma[i], mu[i] + 3*sigma[i], 100)
             plt.plot(x, weight[i] * stats.norm.pdf(x, mu[i], sigma[i]))
-        plt.hist(data.numpy(), density=True, bins="scott", alpha=0.5)
+        
+        plt.hist(data.numpy(), density=True, bins="scott", alpha=0.5, label="true")
         plt.tight_layout()
         plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
         # plt.show()

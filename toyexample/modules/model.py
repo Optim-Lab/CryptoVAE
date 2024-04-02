@@ -14,9 +14,11 @@ class GLDDecoder(nn.Module):
         self.device = device
         
         self.encoder = nn.Sequential(
-            nn.Linear(1, 2),
+            nn.Linear(1, 8),
             nn.ELU(),
-            nn.Linear(2, config["latent_dim"] * 2),
+            nn.Linear(8, 8),
+            nn.ELU(),
+            nn.Linear(8, config["latent_dim"] * 2),
         ).to(device)
         
         self.decoder = nn.Sequential(
@@ -86,9 +88,11 @@ class GaussianDecoder(nn.Module):
         self.device = device
         
         self.encoder = nn.Sequential(
-            nn.Linear(1, 2),
+            nn.Linear(1, 8),
             nn.ELU(),
-            nn.Linear(2, config["latent_dim"] * 2),
+            nn.Linear(8, 8),
+            nn.ELU(),
+            nn.Linear(8, config["latent_dim"] * 2),
         ).to(device)
         
         self.decoder = nn.Sequential(
@@ -133,9 +137,11 @@ class LSQFDecoder(nn.Module):
         self.device = device
         
         self.encoder = nn.Sequential(
-            nn.Linear(1, 2),
+            nn.Linear(1, 8),
             nn.ELU(),
-            nn.Linear(2, config["latent_dim"] * 2),
+            nn.Linear(8, 8),
+            nn.ELU(),
+            nn.Linear(8, config["latent_dim"] * 2),
         ).to(device)
         
         self.delta = torch.arange(0, 1 + config["step"], step=config["step"]).view(1, -1).to(device)
