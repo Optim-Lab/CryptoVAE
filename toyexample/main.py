@@ -1,9 +1,7 @@
 #%%
-import os
 import importlib
-import matplotlib.pyplot as plt
 import numpy as np
-import scipy.stats as stats
+import matplotlib.pyplot as plt
 
 import torch
 #%%
@@ -14,10 +12,10 @@ def get_args(debug):
     
     parser.add_argument('--seed', type=int, default=42, 
                         help='seed for repeatable results')
-    parser.add_argument('--dataset', type=str, default='heavytailed', 
-                        help='Dataset options: heavytailed, uniform, mixture')
-    parser.add_argument('--model', type=str, default='GLD_finite', 
-                        help='Model options: Gaussian, GLD_finite, GLD_infinite, LSQF')
+    parser.add_argument('--dataset', type=str, default='mixture', 
+                        help='Dataset options: uniform, mixture, truncated')
+    parser.add_argument('--model', type=str, default='Gaussian', 
+                        help='Model options: GLD_finite, GLD_infinite, Gaussian, LSQF')
     
     parser.add_argument("--latent_dim", default=2, type=int,
                         help="the latent dimension size")
@@ -29,6 +27,8 @@ def get_args(debug):
     parser.add_argument('--lr', default=0.01, type=float,
                         help='learning rate')
     
+    parser.add_argument("--beta", default=0.1, type=float,
+                        help="weight of KL-Divergence term")
     parser.add_argument("--step", default=0.05, type=float,
                         help="interval size of quantile levels")
     parser.add_argument('--threshold', default=1e-8, type=float,
@@ -49,29 +49,24 @@ def main():
     if config["cuda"]:
         torch.cuda.manual_seed(config["seed"])
     #%%
+    """dataset"""
     dataset_module = importlib.import_module('modules.build_dataset')
     importlib.reload(dataset_module)
-    if config["dataset"] == "heavytailed":
-        data = dataset_module.build_heavytailed(config, device)
-    elif config["dataset"] == "uniform":
-        data = dataset_module.build_uniform(config, device)
-    elif config["dataset"] == "mixture":
-        data = dataset_module.build_mixture(config, device)
-    else:
-        raise ValueError('Not valid support option for DATASET.')
-    plt.hist(data.numpy(), density=True, bins="scott")
+    data = dataset_module.build_dataset(config, device)
+    
+    plt.figure(figsize=(5, 3))
+    # plt.hist(data.numpy(), density=True, bins="scott")
+    plt.plot(np.sort(data.squeeze().numpy()), np.linspace(0, 1, len(data), endpoint=False))
+    plt.ylabel("CDF", fontsize=14)
+    plt.xlabel("x", fontsize=14)
+    plt.tight_layout()
+    # plt.show()
+    plt.close()
     #%%
     """model"""
     model_module = importlib.import_module('modules.model')
     importlib.reload(model_module)
-    if config["model"] in ["GLD_finite", "GLD_infinite"]:
-        model = model_module.GLDDecoder(config, device).to(device)
-    elif config["model"] == "Gaussian":
-        model = model_module.GaussianDecoder(config, device).to(device)
-    elif config["model"] == "LSQF":
-        model = model_module.LSQFDecoder(config, device).to(device)
-    else:
-        raise ValueError('Not valid support option for MODEL.')
+    model = model_module.DistVAE(config, device).to(device)
 
     optimizer = torch.optim.Adam(
         model.parameters(), 
@@ -82,210 +77,23 @@ def main():
     num_params = count_parameters(model)
     print(f"Number of Parameters: {num_params:d}")
     #%%
-    for epoch in range(config["epochs"]+1):
-        optimizer.zero_grad()
-        
-        if config["model"] in ["GLD_finite", "GLD_infinite"]:
-            tau = torch.linspace(0.01, 0.99, 20).unsqueeze(0).to(device)
-            z, mean, logvar, theta1, theta2, theta3, theta4 = model(data)
-            Q = model.quantile_function(tau, theta1, theta2, theta3, theta4)
-            residual = data - Q
-            loss = (residual * (tau - (residual < 0).to(torch.float32))).mean()
-            
-            """KL-Divergence"""
-            KL = torch.pow(mean, 2).sum(dim=1)
-            KL -= logvar.sum(dim=1)
-            KL += torch.exp(logvar).sum(dim=1)
-            KL -= config["latent_dim"]
-            KL *= 0.5
-            KL = KL.mean()
-            
-            beta_ = 0.1
-            loss += beta_ * KL
-            
-        elif config["model"] == "Gaussian":
-            z, mean, logvar, xhat = model(data)
-            residual = data - xhat
-            loss = 0.5 * (residual.pow(2)).mean()
-            
-            """KL-Divergence"""
-            KL = torch.pow(mean, 2).sum(dim=1)
-            KL -= logvar.sum(dim=1)
-            KL += torch.exp(logvar).sum(dim=1)
-            KL -= config["latent_dim"]
-            KL *= 0.5
-            KL = KL.mean()
-            
-            beta_ = 0.1
-            loss += beta_ * KL
-            
-            # z, mean, logvar, xhat, logsigma = model(data)
-            # residual = data - xhat
-            # loss = (residual.pow(2) / (2 * logsigma.exp()) + 0.5 * logsigma).squeeze()
-            
-            # """KL-Divergence"""
-            # KL = torch.pow(mean, 2).sum(dim=1)
-            # KL -= logvar.sum(dim=1)
-            # KL += torch.exp(logvar).sum(dim=1)
-            # KL -= config["latent_dim"]
-            # KL *= 0.5
-            
-            # loss = (loss + KL).mean()
-            # KL = KL.mean()
-        
-        elif config["model"] == "LSQF":
-            z, mean, logvar, gamma, beta = model(data)
-            
-            alpha_tilde = model.quantile_inverse(data, gamma, beta)
-            term = (1 - model.delta.pow(3)) / 3 - model.delta - torch.maximum(alpha_tilde, model.delta).pow(2)
-            term += 2 * torch.maximum(alpha_tilde, model.delta) * model.delta
-            
-            loss = (2 * alpha_tilde) * data
-            loss += (1 - 2 * alpha_tilde) * gamma
-            loss += (beta * term).sum(dim=1, keepdims=True)
-            loss *= 0.5
-            loss = loss.mean()
-            
-            """KL-Divergence"""
-            KL = torch.pow(mean, 2).sum(dim=1)
-            KL -= logvar.sum(dim=1)
-            KL += torch.exp(logvar).sum(dim=1)
-            KL -= config["latent_dim"]
-            KL *= 0.5
-            KL = KL.mean()
-            
-            beta_ = 0.1
-            loss += beta_ * KL
-            
-        else:
-            raise ValueError('Not valid support option for MODEL.')
-        
-        loss.backward()
-        optimizer.step()
-        
-        if epoch % 20 == 0:
-            print_input = "[epoch {:03d}]".format(epoch)
-            print_input += ', {}: {:.4f}, {}: {:.4f}'.format("loss", loss, "KL", KL)
-            print(print_input)
-    #%%
-    with torch.no_grad():
-        if config["model"] in ["GLD_finite", "GLD_infinite"]:
-            z_ = torch.randn((len(data), config["latent_dim"]))
-            alpha = torch.rand((len(data), 1))
-            theta1, theta2, theta3, theta4 = model.decode(z_)
-            syndata = model.quantile_function(alpha, theta1, theta2, theta3, theta4)
-            
-        elif config["model"] == "Gaussian":
-            z_ = torch.randn((len(data), config["latent_dim"]))
-            xhat = model.decoder(z_)
-            syndata = xhat + np.sqrt(beta_) * torch.randn((len(data), 1))
-            # h = model.decoder(z_)
-            # xhat, logsigma = h[:, [0]], h[:, [1]]
-            # syndata = xhat + logsigma.exp().sqrt() * torch.randn((len(data), 1))
-        
-        elif config["model"] == "LSQF":
-            z_ = torch.randn((len(data), config["latent_dim"]))
-            alpha = torch.rand((len(data), 1))
-            gamma, beta = model.decode(z_)
-            syndata = model.quantile_function(alpha, gamma, beta)
-            
-        else:
-            raise ValueError('Not valid support option for MODEL.')
+    """training"""
+    train_module = importlib.import_module('modules.train')
+    importlib.reload(train_module)
     
-    asset_dir = f"./assets/"
-    if not os.path.exists(asset_dir):
-        os.makedirs(asset_dir)
-    plt.hist(
-        data.numpy(), 
-        density=True, bins="scott", label=f"true({config['dataset']})", alpha=0.7)
-    plt.hist(
-        syndata.numpy(), 
-        density=True, bins="scott", label=f"synthetic({config['model']})", alpha=0.7)
-    if config["dataset"] == "heavytailed":
-        plt.ylim(0, 0.01)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"./{asset_dir}/aggregated_{config['dataset']}_{config['model']}.png")
-    # plt.show()
-    plt.close()
-    #%%
     if config["model"] in ["GLD_finite", "GLD_infinite"]:
-        with torch.no_grad():
-            z_ = torch.randn((20, config["latent_dim"]))
-            theta1, theta2, theta3, theta4 = model.decode(z_)
-
-        var = stats.multivariate_normal(mean=[0,0], cov=[[1,0],[0,1]])
-        weight = var.pdf(z_.numpy())
-        if config["dataset"] == "uniform":
-            weight = np.ones_like(weight)
-
-        for i in range(len(z_)):
-            alpha = torch.linspace(0, 1, 1000)[:, None]
-            syndata = model.quantile_function(alpha, theta1[[i]], theta2[[i]], theta3[[i]], theta4[[i]])
-            dx = syndata[1:] - syndata[0:-1]
-            deriv = np.diff(alpha.numpy().squeeze()) / dx.squeeze()
-            plt.plot(syndata.numpy().squeeze()[1:], weight[i] * deriv)
-        plt.hist(data.numpy(), density=True, bins="scott", alpha=0.5, label="true")
-        plt.tight_layout()
-        plt.legend()
-        plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
-        # plt.show()
-        plt.close()
+        train_module.GLD_train(model, optimizer, data, config, device)
+    elif config["model"] == "Gaussian":
+        train_module.Gaussian_train(model, optimizer, data, config, device)
+    elif config["model"] == "LSQF":
+        train_module.LSQF_train(model, optimizer, data, config, device)
+    else:
+        raise ValueError('Not valid support option for MODEL.')
     #%%
-    if config["model"] == "LSQF":
-        with torch.no_grad():
-            z_ = torch.randn((20, config["latent_dim"]))
-            gamma, beta = model.decode(z_)
-
-        for i in range(len(z_)):
-            alpha = torch.linspace(0, 1, 100)[:, None]
-            syndata = model.quantile_function(alpha, gamma[[i]], beta[[i]])
-            plt.plot(syndata.numpy(), alpha.numpy())
-        plt.plot(
-            np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False), linewidth=3, label="true")
-        plt.fill_between(
-            np.sort(data.squeeze().numpy()), 
-            np.linspace(0, 1, len(data), endpoint=False), 
-            color='blue', alpha=0.1)
-        plt.tight_layout()
-        plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
-        # plt.show()
-        plt.close()
-    #%%
-    if config["model"] == "Gaussian":
-        with torch.no_grad():
-            z_ = torch.randn((20, config["latent_dim"])) # prior distribution
-            xhat = model.decoder(z_)
-            # h = model.decoder(z_)
-            # xhat, logsigma = h[:, [0]], h[:, [1]]
-        
-        var = stats.multivariate_normal(mean=[0,0], cov=[[1,0],[0,1]])
-        weight = var.pdf(z_.numpy())
-        if config["dataset"] == "uniform":
-            weight = np.ones_like(weight)
-        mu = xhat.numpy()
-        sigma = np.ones((len(z_), 1)) * np.sqrt(beta_)
-        # sigma = logsigma.exp().sqrt().numpy()
-        
-        for i in range(len(z_)):
-            x = np.linspace(mu[i] - 3*sigma[i], mu[i] + 3*sigma[i], 100)
-            plt.plot(x, weight[i] * stats.norm.pdf(x, mu[i], sigma[i]))
-        
-        plt.hist(data.numpy(), density=True, bins="scott", alpha=0.5, label="true")
-        plt.tight_layout()
-        plt.savefig(f"./{asset_dir}/latent_{config['dataset']}_{config['model']}.png")
-        # plt.show()
-        plt.close()
-    #%%
-    # if config["model"] == "LSQF":
-    #     with torch.no_grad():
-    #         alpha = torch.linspace(0, 1, 100)[:, None]
-    #         z_ = torch.randn((len(alpha), config["latent_dim"]))
-    #         gamma, beta = model(z_)
-    #         syndata = model.quantile_function(alpha, gamma, beta)
-            
-    #         plt.plot(syndata.numpy(), alpha.numpy())
+    """visualization"""
+    viz_module = importlib.import_module('modules.viz')
+    importlib.reload(viz_module)
+    syndata = viz_module.viz_synthetic(model, data, config, show=False)
 #%%
 if __name__ == '__main__':
     main()
