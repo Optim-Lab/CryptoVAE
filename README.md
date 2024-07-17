@@ -6,14 +6,14 @@ This repository is the official implementation of Multivariate Cryptocurrency Pr
 
 ## Training & Evaluation 
 
-### Proposed Method
+### 1. Training Proposed Method
 ```
 python main.py --model <model>
 ```   
 - `<model>` options: `GLD_finite`, `GLD_infinite`, `LSQF`, `ExpLog`
 - detailed configuration files can be found in `configs` folder
 
-### Benchmark Methods
+### 2. Training Benchmark Methods
 ```
 python main.py --model 'TLAE'
 python main.py --model 'ProTran'
@@ -31,4 +31,20 @@ python benchmarks/benchmark_eval.py --model 'TFT' --tau 1
 - step-by-step evaluation for our proposed method: `infernce.py`
 - step-by-step evaluation for benchmark methods: `benchmarks/benchmark_eval.py`   
 
+## Directory and Codes
+```
+.
++-- assets (includes visualization results and pretrained weights of benchmark methods)
++-- benchmarks (includes codes for training benchmark methods)
++-- config (includes detailed configuration files)
++-- module 
++-- inference.py
++-- main.py
++-- LICENSE
++-- README.md
+```
+
 ## Citation
+```
+
+```

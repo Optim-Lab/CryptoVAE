@@ -1,6 +1,0 @@
-seed: 1
-model: 'ProTran'
-beta: 0.001
-scaling: 1
-epochs: 300
-lr: 0.005
