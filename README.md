@@ -3,6 +3,8 @@
 This repository is the official implementation of Multivariate Cryptocurrency Price Forecasting using CryptoVAE and benchmark models with pytorch. 
 
 > **_NOTE:_** This repository supports [WandB](https://wandb.ai/site) MLOps platform!
+>
+> **project homepage**: [https://crypto-vae.streamlit.app/](https://crypto-vae.streamlit.app/)
 
 ## Training & Evaluation 
 
