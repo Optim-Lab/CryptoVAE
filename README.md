@@ -1,6 +1,6 @@
 # Cryptocurrency Price Forecasting using Variational AutoEncoder with Versatile Quantile Modeling
 
-This repository is the official implementation of Multivariate Cryptocurrency Price Forecasting using CryptoVAE and benchmark models with pytorch. 
+This repository is the official implementation of Cryptocurrency Price Forecasting using Variational AutoEncoder with Versatile Quantile Modeling (CIKM, 2024). 
 
 > **_NOTE:_** This repository supports [WandB](https://wandb.ai/site) MLOps platform!
 >
