@@ -48,5 +48,11 @@ python benchmarks/benchmark_eval.py --model 'TFT' --tau 1
 
 ## Citation
 ```
-
+@inproceedings{hong2024cryptocurrency,
+  title={Cryptocurrency Price Forecasting using Variational Autoencoder with Versatile Quantile Modeling},
+  author={Hong, Sungchul and An, Seunghwan and Jeon, Jong-June},
+  booktitle={Proceedings of the 33rd ACM International Conference on Information and Knowledge Management},
+  pages={4530--4537},
+  year={2024}
+}
 ```
